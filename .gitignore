@@ -6,3 +6,5 @@
 include/
 test/
 lib/
+src-hub/src/secrets.h    
+src-spoke/src/secrets.h  
