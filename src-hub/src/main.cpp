@@ -11,10 +11,15 @@
 #define MODEM_PWRKEY 18 
 #define MODEM_RX_PIN 16
 #define MODEM_TX_PIN 17
-
 // --- CONFIGURATION ---
 // We use 'gcp_url' everywhere now.
-String gcp_url = "https://ingest-farm-data-362443017574.asia-south1.run.app"; 
+
+#include "secrets.h" 
+
+// ... inside your code ...
+
+// 2. Use the Macro instead of the hardcoded string
+String gcp_url = SECRETS_GCP_URL;
 
 // Objects
 HardwareSerial modemSerial(2);
