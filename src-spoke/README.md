@@ -9,6 +9,15 @@ The **FarmSpoke** is a low-power, wireless sensor node designed to sit in the fi
 
 ## 🔌 Pinout & Wiring
 
+```text
+     ESP8266 (NodeMCU)             Soil Sensor
+    +---------+                   +-----------+
+    |     3V3 |-------------------| VCC       |
+    |     GND |-------------------| GND       |
+    |      A0 |<------------------| AOUT      |
+    +---------+                   +-----------+
+```
+
 | ESP8266 Pin | Sensor Pin | Function | Notes |
 | :--- | :--- | :--- | :--- |
 | **A0** (ADC) | AOUT | Analog Output | Reads voltage (Dry=High, Wet=Low) |
@@ -24,6 +33,9 @@ The code maps raw analog values (0-1024) to a percentage (0-100%).
 * **Water Value (100%):** ~420 (Min Resistance)
 * **Formula:** `map(reading, 1024, 420, 0, 100)`
 
+## ⚠️ Configuration Required
+You **must** update the `broadcastAddress` in `src/main.cpp` to match your Hub's MAC address. The Hub prints its MAC address to the Serial Monitor upon startup.
+
 ## 📡 Communication Protocol
 Uses **ESP-NOW** for ultra-fast transmission (<200ms active time).
 * **Role:** Controller (Sender)
@@ -35,3 +47,7 @@ Uses **ESP-NOW** for ultra-fast transmission (<200ms active time).
       int moisture;  // Raw Analog Value
     }
     ```
+
+## 🔋 Power Management (Current Status)
+*   **Current:** Uses standard `delay(60000)` loop for testing.
+*   **Planned (v2):** Deep Sleep implementation with transistor-gated sensor power to prevent corrosion and extend battery life.

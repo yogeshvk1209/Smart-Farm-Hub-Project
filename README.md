@@ -11,7 +11,7 @@ A decentralized wireless sensor network for farm monitoring. The system consists
 - **Spokes (Sensors):** ESP8266 + Capacitive Soil Moisture Sensors.
 - **Protocol (Local):** ESP-NOW (Peer-to-Peer, no Wi-Fi router required).
 - **Hub (Gateway):** ESP32 + LTE Modem (SIM7600/EC200U/A7670).
-- **Protocol (Cloud):** 4G LTE (MQTT / Blynk) over UART.
+- **Protocol (Cloud):** 4G LTE (HTTP GET via AT Commands).
 
 ---
 
@@ -35,24 +35,6 @@ A decentralized wireless sensor network for farm monitoring. The system consists
 
 ---
 
-## 🛠 Troubleshooting Log (Lessons Learned)
-
-### Issue 1: Modem "Double Toggle" Loop
-* **Symptom:** Modem turns ON when power is applied, but turns OFF exactly when ESP32 resets.
-* **Cause:** The ESP32 code was blindly pulsing the PWRKEY LOW for 2 seconds on setup. Since the modem was *already* ON, this pulse acted as a "Shutdown" command.
-* **Fix:** Implemented "Check-First" logic. Code now sends `AT` command first. If `OK` is received, it skips the power pulse.
-
-### Issue 2: The "Boot Blink" Trap
-* **Symptom:** Modem powers off on boot even without code logic.
-* **Cause:** We used **GPIO 2 (D4)** for PWRKEY. This pin is tied to the on-board LED and flashes LOW during boot, triggering the modem's power button.
-* **Fix:** Moved PWRKEY wire to **GPIO 18**.
-
-### Issue 3: Unstable Serial
-* **Symptom:** Garbage characters or missed data.
-* **Fix:** Switched from `SoftwareSerial` to `HardwareSerial(2)` on ESP32.
-
----
-
 ## 💻 Software Logic
 
 ### Hub (ESP32) Boot Sequence
@@ -66,11 +48,36 @@ A decentralized wireless sensor network for farm monitoring. The system consists
 4.  **Data Loop:** Listen for ESP-NOW packets -> Upload via LTE.
 
 ### Spoke (ESP8266) Logic
-1.  **Wake Up:** Deep Sleep interrupt or Timer.
-2.  **Sensor Power:** Turn on Transistor/MOSFET powering sensor (Anti-corrosion measure).
-3.  **Read:** Analog Read (A0).
-4.  **Send:** Transmit struct via ESP-NOW to Hub MAC Address.
-5.  **Sleep:** Enter Deep Sleep immediately.
+1.  **Wake Up:** Timer based (Current implementation uses `delay` for testing; Deep Sleep planned for v2).
+2.  **Read:** Analog Read (A0).
+3.  **Send:** Transmit struct via ESP-NOW to Hub MAC Address.
+4.  **Wait:** Wait for next cycle (60s).
+
+---
+
+## 🛠 Getting Started
+
+### Prerequisites
+*   **VS Code** with **PlatformIO** extension installed.
+*   **Google Cloud Account** (for Backend).
+
+### Setup Instructions
+
+1.  **Clone the Repository:**
+    ```bash
+    git clone https://github.com/your-username/Smart-Farm-Hub-Project.git
+    ```
+
+2.  **Hub Configuration:**
+    *   Navigate to `src-hub/src/`.
+    *   Rename `secrets_example.h` to `secrets.h`.
+    *   Enter your Google Cloud Run URL in `secrets.h`.
+    *   Flash to ESP32.
+
+3.  **Spoke Configuration:**
+    *   Open `src-spoke/src/main.cpp`.
+    *   Update `broadcastAddress[]` with your Hub's MAC Address (The Hub prints this to Serial on boot).
+    *   Flash to ESP8266.
 
 ---
 

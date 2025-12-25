@@ -11,6 +11,17 @@ The **FarmHub** is the central gateway for the distributed IoT system. It listen
 ## 🔌 Pinout & Wiring
 The ESP32 communicates with the modem via UART2 (Hardware Serial).
 
+```text
+       ESP32                       Modem (EC200U/SIM7600)
+    +---------+                   +----------------------+
+    |     3V3 |-------------------| VCC (Or 5V/VBUS)     |
+    |     GND |-------------------| GND                  |
+    | GPIO 16 |<------------------| TXD                  |
+    | GPIO 17 |------------------>| RXD                  |
+    | GPIO 18 |------------------>| PWRKEY               |
+    +---------+                   +----------------------+
+```
+
 | ESP32 Pin | EC200U Pin | Function | Notes |
 | :--- | :--- | :--- | :--- |
 | **GPIO 16** (RX2) | TXD | UART Receive | Receives data *from* Modem |
@@ -36,3 +47,12 @@ Instead of using standard HTTP libraries (which often fail on IPv6-only networks
 3.  **Connect:** Wakes Modem and ensures IPv6 Context is active.
 4.  **Upload:** Sends HTTPS GET request to Cloud Run:
     `https://[cloud-run-url]/?device_id=spoke_1&raw=607&pct=69`
+
+## ⚙️ Configuration
+Before compiling, you must configure your backend URL:
+1.  Go to `src/`.
+2.  Rename `secrets_example.h` to `secrets.h`.
+3.  Replace the placeholder URL with your deployed Google Cloud Run endpoint.
+
+## 🛠 Debugging & Troubleshooting
+For a comprehensive guide on AT commands and debugging the **Quectel EC200U** modem (especially on the Jio network), please refer to the [Modem Debugging Guide](Debug.md).

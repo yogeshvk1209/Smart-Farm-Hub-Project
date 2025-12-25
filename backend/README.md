@@ -18,7 +18,21 @@ This directory contains the serverless infrastructure code for the Smart Farm Hu
 └── /database            # Infrastructure as Code
     └── schema.sql       # BigQuery DDL Script
 ```
-🚀 Deployment Guide
+## ⚙️ Configuration
+
+### Environment Variables
+The ingestion function code currently contains hardcoded configuration values at the top of `function-ingest/main.py`.
+
+**Before deploying**, please open `backend/function_ingest-farm-data/main.py` and update the following variables to match your GCP project:
+
+```python
+# CONFIG (Update if needed)
+PROJECT_ID = "your-project-id"  # <--- Update this!
+DATASET_ID = "farm_telemetry"
+TABLE_ID = "soil_readings"
+```
+
+## 🚀 Deployment Guide
 Prerequisites
 Google Cloud SDK (gcloud) installed and authenticated.
 
