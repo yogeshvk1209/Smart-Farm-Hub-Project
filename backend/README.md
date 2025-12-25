@@ -11,17 +11,17 @@ This directory contains the serverless infrastructure code for the Smart Farm Hu
 
 ```text
 /backend
-├── /function-ingest     # Python Source Code
-│   ├── main.py          # Logic for GET/POST handling
-│   └── requirements.txt # Dependencies
+├── /function_ingest-farm-data # Python Source Code
+│   ├── main.py                # Logic for GET/POST handling
+│   └── requirements.txt       # Dependencies
 │
-└── /database            # Infrastructure as Code
-    └── schema.sql       # BigQuery DDL Script
+└── /database                  # Infrastructure as Code
+    └── schema.sql             # BigQuery DDL Script
 ```
 ## ⚙️ Configuration
 
 ### Environment Variables
-The ingestion function code currently contains hardcoded configuration values at the top of `function-ingest/main.py`.
+The ingestion function code currently contains hardcoded configuration values at the top of `function_ingest-farm-data/main.py`.
 
 **Before deploying**, please open `backend/function_ingest-farm-data/main.py` and update the following variables to match your GCP project:
 
@@ -50,9 +50,8 @@ This will create the farm_telemetry dataset and the soil_readings table.
 2. Function Deployment (Cloud Run)
 Navigate to the function directory and deploy using the CLI.
 
-Bash
-
-cd function-ingest
+```bash
+cd function_ingest-farm-data
 
 gcloud functions deploy ingest-farm-data \
   --gen2 \
@@ -62,6 +61,7 @@ gcloud functions deploy ingest-farm-data \
   --entry-point=ingest_data \
   --trigger-http \
   --allow-unauthenticated
+```
 Note: The --allow-unauthenticated flag is required because the IoT modem cannot handle complex OAuth token generation.
 
 🔌 API Usage
@@ -70,14 +70,13 @@ The ingestion function is designed to be robust against modem limitations. It su
 Method A: URL Parameters (GET)
 Used by the IoT Modem (Quectel EC200U) to bypass header injection issues.
 
-HTTP
-
+```http
 GET https://[YOUR-URL].run.app/?device_id=spoke_1&raw=600&pct=45&bat=4.2
+```
 Method B: JSON Payload (POST)
 Used for testing or future capable devices.
 
-HTTP
-
+```http
 POST https://[YOUR-URL].run.app/
 Content-Type: application/json
 
@@ -87,13 +86,14 @@ Content-Type: application/json
   "pct": 45,
   "bat": 4.2
 }
+```
 📊 Verification
 To verify data arrival, run this SQL query in BigQuery:
 
-SQL
-
+```sql
 SELECT * FROM `farm_telemetry.soil_readings` 
 ORDER BY event_ts DESC 
 LIMIT 10
+```
 
 
