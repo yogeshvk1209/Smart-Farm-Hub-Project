@@ -1,0 +1,66 @@
+🧊 PROJECT STATE: SMART FARM HUB (Frozen: Dec 30, 2025)
+1. The Goal: Building a rugged, solar-powered IoT Farm Hub to monitor soil/environment and send data to the cloud.
+
+2. Hardware Architecture:
+
+Core: ESP32 (DOIT DevKit V1) + EC200U (4G LTE Modem).
+
+Power Source: 3x 18650 Li-Ion Pack (12.6V) with BMS.
+
+Regulation: LM2596 Buck Converter (Tuned to 5.1V).
+
+Sensors: BME280 (Env), Capacitive Soil Moisture (Analog).
+
+Board: 9x15cm Perfboard.
+
+3. The Current Status (The "Blockers"):
+
+Soldering: PAUSED. Old iron died. Awaiting Bakon BK606A (90W) delivery.
+
+Enclosure: The 150x110mm box was too small. Decision: Buy a 200x150mm ABS IP65 box (~₹450). Do NOT use the 4x4 CCTV boxes (too cramped).
+
+Software: GCP Pipeline (Cloud Run -> BigQuery) is architected but code implementation is pending.
+
+4. The Wiring Plan (CONFIRMED):
+
+Topology: "Common Bus" Strategy.
+
+Entry: DC Jack (Wall) wires go into the PCB Screw Terminal.
+
+Storage: Battery wires (from Power Tower) go into the SAME PCB Screw Terminal.
+
+Regulation: Wires run from Screw Terminal -> LM2596 Inputs.
+
+Logic Power: Wires run from LM2596 Outputs -> ESP32/Modem VCC.
+
+Grounds: All Grounds are common.
+
+5. Implementation Details (Key Decisions):
+
+Soldering Tip: Use 900M-TK (Knife) for battery pads; TB (Pencil) for ESP32.
+
+LM2596 Mounting: Solder Female Headers to the board so the module is removable/replaceable. (Watch out for non-standard grid spacing).
+
+Safety: "Seatbelt" tape required for battery pack. "Modem Kiss" insulation needed between battery and modem.
+
+Software Fix Needed: BME280 likely has wrong I2C address (0x76) or ID (0x56/0x58). Need to force address or bypass ID check in library.
+
+6. Cloud Infrastructure (Already Architected):
+
+Protocol: HTTP POST from ESP32.
+
+Ingest: GCP Cloud Run (Serverless Function).
+
+Storage: Google BigQuery.
+
+Payload Structure: JSON.
+
+7. Immediate Next Steps (When Resuming):
+
+Test the new Bakon 90W iron.
+
+Drill holes in the new 200x150mm enclosure.
+
+Solder the "Power Section" (Screw Terminals + LM2596 Headers) first.
+
+Flash "Passthrough Code" to test EC200U SIM connectivity.
