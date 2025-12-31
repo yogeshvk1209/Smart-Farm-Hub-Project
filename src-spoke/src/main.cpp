@@ -15,9 +15,9 @@ const int WET_SOIL = 500;   // Threshold for "Fully Saturated" (100%)
 
 // 3. SLEEP SCHEDULE (24H Format)
 const int START_HOUR = 7;     // Wake up at 07:00
-const int END_HOUR = 19;      // Sleep at 19:00
-// Note: Currently set to 2 mins for testing. Change to 15 for production!
-const int INTERVAL_MINS = 30; 
+const int END_HOUR = 22;      // Sleep at 19:00
+
+// Note: INTERVAL_MINS is removed because we now calculate dynamic snap-to-grid times
 
 RTC_DS3231 rtc;
 
@@ -50,49 +50,74 @@ int readSoil() {
   if (raw < WET_SOIL) return 100;
 
   // Zone 3: The Useful Range
-  // map(value, low_in, high_in, low_out, high_out)
   return map(raw, DRY_SOIL, WET_SOIL, 0, 100);
 }
 
-// 3. Sleep Calculator
+// 3. Smart Sleep Calculator (Snap-to-Grid)
 long calculateSleepDuration(DateTime now) {
   int currentHour = now.hour();
   long sleepSeconds = 0;
 
-  // NIGHT MODE: Sleep until 7 AM
+  // --- NIGHT MODE: Sleep untill 7 AM ---
   if (currentHour >= END_HOUR || currentHour < START_HOUR) {
     DateTime tomorrow7am;
     if (currentHour >= END_HOUR) {
+       // It's after 19:00, target is tomorrow 7AM
        tomorrow7am = DateTime(now.year(), now.month(), now.day() + 1, START_HOUR, 0, 0);
     } else {
+       // It's before 07:00 (e.g. 02:00), target is today 7AM
        tomorrow7am = DateTime(now.year(), now.month(), now.day(), START_HOUR, 0, 0);
     }
     TimeSpan timeDiff = tomorrow7am - now;
     sleepSeconds = timeDiff.totalseconds();
-    Serial.printf("Night Time. Sleeping for %ld sec until 7AM.\n", sleepSeconds);
+    Serial.printf("Night Time. Hibernating for %ld sec until 07:00.\n", sleepSeconds);
   } 
-  // DAY MODE: Interval Sleep
+  
+  // --- DAY MODE: Snap to :00 or :30 ---
   else {
-    sleepSeconds = INTERVAL_MINS * 60;
-    Serial.printf("Day Time. Sleeping for %d mins.\n", INTERVAL_MINS);
+    int currentMin = now.minute();
+    int currentSec = now.second();
+    
+    // Logic: If minutes < 30, target is 30. If > 30, target is 60 (next hour 00)
+    int nextTargetMin = (currentMin < 30) ? 30 : 60; 
+    
+    // Calculate minutes remaining
+    int minsToSleep = nextTargetMin - currentMin;
+    
+    // Convert to seconds, subtracting current seconds for precision
+    sleepSeconds = (minsToSleep * 60) - currentSec;
+
+    // SAFETY CHECK: 
+    // If we are at 10:29:58, sleepSeconds might be 2 seconds. 
+    // That's too short. Skip to NEXT slot (30 mins later).
+    if (sleepSeconds < 10) {
+      sleepSeconds += 1800; // Add 30 mins (1800 seconds)
+      Serial.println("Too close to slot boundary! Skipping to next cycle.");
+    }
+
+    Serial.printf("Day Time. Current: %02d:%02d:%02d -> Target min: %d\n", currentHour, currentMin, currentSec, nextTargetMin);
+    Serial.printf("Aligning to Grid. Sleeping for %ld sec.\n", sleepSeconds);
   }
+  
   return sleepSeconds;
 }
 
 // --- MAIN SETUP ---
 void setup() {
   Serial.begin(115200);
-  Wire.begin(D2, D1); // SDA=D2, SCL=D1
+  Wire.begin(D2, D1); // SDA=D2, SCL=D1 (Standard NodeMCU I2C)
 
   // 1. Init RTC
   if (!rtc.begin()) {
-    Serial.println("RTC Failed! Defaulting to interval sleep.");
-    ESP.deepSleep(INTERVAL_MINS * 60 * 1000000); 
+    Serial.println("CRITICAL ERROR: RTC Failed! Sleeping 30 mins blindly.");
+    ESP.deepSleep(1800e6); // Fallback to raw 30 mins if RTC dies
   }
-  // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)) + TimeSpan(0, 0, 2, 0)); // TIME SYNC LINE
+  
+  // UNCOMMENT THIS LINE ONE TIME TO SYNC TIME, THEN RE-UPLOAD WITH IT COMMENTED
+  // rtc.adjust(DateTime(F(__DATE__), F(__TIME__))); 
 
   DateTime now = rtc.now();
-  Serial.printf("\nTime: %02d:%02d\n", now.hour(), now.minute());
+  Serial.printf("\n--- WAKE UP ---\nTime: %02d:%02d:%02d\n", now.hour(), now.minute(), now.second());
 
   // 2. Init WiFi & ESP-NOW
   WiFi.mode(WIFI_STA);
@@ -105,22 +130,28 @@ void setup() {
   esp_now_register_send_cb(OnDataSent);
   esp_now_add_peer(broadcastAddress, ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
 
-  // 3. Read Sensor (Using New Function)
+  // 3. Read Sensor
   int percent = readSoil();
   Serial.printf("Moisture: %d%%\n", percent);
   
   // 4. Send Data
   myData.id = 1; 
   myData.moisture = percent;
+  // Note: We aren't reading battery voltage yet, sending 0.0 or simulated value
+  myData.voltage = 0.0; 
+  
   esp_now_send(broadcastAddress, (uint8_t *) &myData, sizeof(myData));
   
-  delay(100); // Give WiFi time to transmit
+  delay(100); // Give ESP-NOW a moment to blast the packet
 
-  // 5. Deep Sleep
+  // 5. Deep Sleep Calculation
   long sleepSecs = calculateSleepDuration(now);
-  ESP.deepSleep(sleepSecs * 1000000); 
+  
+  Serial.println("Going to Deep Sleep...");
+  // ULL ensures the calculation is treated as an Unsigned Long Long (64-bit) preventing overflow
+  ESP.deepSleep(sleepSecs * 1000000ULL); 
 }
 
 void loop() {
-  // Never reached
+  // Loop is empty because Deep Sleep resets the device entirely
 }

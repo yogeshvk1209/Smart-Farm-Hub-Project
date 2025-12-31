@@ -1,155 +1,103 @@
-#include <Arduino.h>
 #include <WiFi.h>
 #include <esp_now.h>
+#include <esp_wifi.h>
+#include <Wire.h>
+#include <RTClib.h>
 
-// --- 1. MODEM CONFIGURATION ---
-#define TINY_GSM_MODEM_SIM7600
-#define TINY_GSM_RX_BUFFER 1024 
-#include <TinyGsmClient.h>
-
-// Pins
-#define MODEM_PWRKEY 18 
-#define MODEM_RX_PIN 16
-#define MODEM_TX_PIN 17
 // --- CONFIGURATION ---
-// We use 'gcp_url' everywhere now.
+const int WINDOW_DURATION = 5; // Stay awake for 5 minutes
+const int WIFI_CHANNEL = 1;    // MUST match Spoke
 
-#include "secrets.h" 
+RTC_DS3231 rtc;
 
-// ... inside your code ...
-
-// 2. Use the Macro instead of the hardcoded string
-String gcp_url = SECRETS_GCP_URL;
-
-// Objects
-HardwareSerial modemSerial(2);
-TinyGsm modem(modemSerial);
-
-// --- 2. DATA STRUCTURES ---
-typedef struct struct_message {
-  int id;
-  int moisture;
+// --- DATA STRUCTURE ---
+typedef struct __attribute__((packed)) struct_message {
+  int id;          
+  int moisture;    
+  float voltage;   
 } struct_message;
 
 struct_message incomingData;
 volatile bool newDataReceived = false;
 
-// --- 3. ESP-NOW CALLBACK ---
-void OnDataRecv(const uint8_t * mac, const uint8_t *incomingBytes, int len) {
-  memcpy(&incomingData, incomingBytes, sizeof(incomingData));
-  newDataReceived = true; 
+// --- FAST CALLBACK ---
+void OnDataRecv(const esp_now_recv_info_t * info, const uint8_t *incomingDataPtr, int len) {
+  if (len != sizeof(incomingData)) return;
+  memcpy(&incomingData, incomingDataPtr, sizeof(incomingData));
+  newDataReceived = true; // Set flag and exit immediately
 }
 
-// --- 4. MANUAL GET UPLOAD (The Fix) ---
-void sendManualGET(String params) {
-  Serial.println("\n>>> STARTING GET UPLOAD <<<");
-
-  // 1. Configure Context
-  modem.sendAT("+QHTTPCFG=\"contextid\",1");
-  modem.waitResponse();
-
-  // 2. SSL Config
-  modem.sendAT("+QHTTPCFG=\"sslctxid\",1"); 
-  modem.waitResponse();
-  modem.sendAT("+QSSLCFG=\"seclevel\",1,0");
-  modem.waitResponse();
-
-  // 3. Construct URL
-  // Uses 'gcp_url' correctly now
-  String full_url = gcp_url + "/?" + params;
-  int urlLen = full_url.length();
+// --- SLEEP MANAGER ---
+void manageSleep(DateTime now) {
+  int currentMin = now.minute();
   
-  Serial.print("Target: "); Serial.println(full_url);
+  // Logic: Active Window is XX:29-XX:34 OR XX:59-XX:04
+  bool inWindow = false;
+  if (currentMin >= 59 || currentMin <= (WINDOW_DURATION - 1)) inWindow = true;
+  if (currentMin >= 29 && currentMin <= (29 + WINDOW_DURATION)) inWindow = true;
 
-  // 4. Set URL
-  modem.sendAT("+QHTTPURL=" + String(urlLen) + ",80");
-  if (modem.waitResponse(10000, "CONNECT") == 1) {
-    modem.stream.print(full_url);
-    modem.waitResponse();
-  } else {
-    Serial.println("Error: URL Setup Failed");
-    return;
+  if (inWindow) {
+    return; // Stay Awake
   }
 
-  // 5. Send GET Request
-  Serial.println("Sending Request...");
-  modem.sendAT("+QHTTPGET=60"); 
+  // Calculate Sleep
+  Serial.println("Window Closed. Calculating Sleep...");
+  int nextTargetMin = (currentMin < 29) ? 29 : 59;
+  if (currentMin > 59) nextTargetMin = 29; 
+
+  int minsToSleep = nextTargetMin - currentMin;
+  if (minsToSleep < 0) minsToSleep += 60; 
+
+  long sleepSeconds = (minsToSleep * 60) - now.second();
+  if (sleepSeconds <= 0) sleepSeconds = 10;
+
+  Serial.printf("Current: %02d:%02d. Sleeping for %ld sec.\n", now.hour(), currentMin, sleepSeconds);
   
-  // 6. Read Response
-  long start = millis();
-  while (millis() - start < 15000) {
-    while (modem.stream.available()) {
-      String line = modem.stream.readStringUntil('\n');
-      Serial.print("RX: "); Serial.println(line); 
-      // Check for HTTP 200
-      if (line.indexOf("200") != -1 && line.indexOf("QHTTP") == -1) {
-         Serial.println(">>> SUCCESS: 200 OK Received <<<");
-      }
-    }
-    delay(100);
-  }
-  Serial.println(">>> CYCLE DONE <<<\n");
-}
-
-// --- 5. JIO CONNECTION SEQUENCE ---
-bool connectToJio() {
-  Serial.println("\n--- JIO SETUP: START ---");
-  
-  modem.sendAT("+QIDEACT=1");
-  modem.waitResponse();
-
-  Serial.print("Setting IPv4v6... ");
-  modem.sendAT("+QICSGP=1,3,\"jionet\",\"\",\"\",0");
-  if (modem.waitResponse() == 1) Serial.println("OK");
-  else return false;
-
-  Serial.print("Activating... ");
-  modem.sendAT("+QIACT=1");
-  if (modem.waitResponse(10000) == 1) Serial.println("OK");
-  else return false;
-
-  Serial.println("--- JIO SETUP: COMPLETE ---\n");
-  return true;
+  // Enable Deep Sleep
+  esp_sleep_enable_timer_wakeup(sleepSeconds * 1000000ULL);
+  esp_deep_sleep_start();
 }
 
 void setup() {
   Serial.begin(115200);
   
-  pinMode(MODEM_PWRKEY, OUTPUT);
-  digitalWrite(MODEM_PWRKEY, HIGH); 
-  modemSerial.begin(115200, SERIAL_8N1, MODEM_RX_PIN, MODEM_TX_PIN);
-  delay(1000);
+  // 1. Init RTC
+  if (!rtc.begin()) { Serial.println("RTC Failed!"); }
+  // rtc.adjust(DateTime(F(__DATE__), F(__TIME__))); // Uncomment ONLY if time is wrong
 
-  Serial.println("System Initializing...");
-  modem.restart(); 
-  
-  if (connectToJio()) {
-    Serial.println("Hub Online.");
-  } else {
-    Serial.println("Hub Offline (Modem Error).");
-  }
-
+  // 2. Init WiFi & Force Channel
   WiFi.mode(WIFI_STA);
-  if (esp_now_init() != ESP_OK) return;
-  esp_now_register_recv_cb(esp_now_recv_cb_t(OnDataRecv));
+  esp_wifi_set_promiscuous(true);
+  esp_wifi_set_channel(WIFI_CHANNEL, WIFI_SECOND_CHAN_NONE);
+  esp_wifi_set_promiscuous(false);
+
+  // 3. Init ESP-NOW
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("ESP-NOW Error");
+    return;
+  }
+  esp_now_register_recv_cb(OnDataRecv);
+
+  Serial.println("HUB STARTED. Waiting for window or packets...");
   
-  Serial.println(">>> WAITING FOR SPOKE DATA <<<");
+  // 4. Initial Sleep Check
+  manageSleep(rtc.now());
 }
 
 void loop() {
+  // 1. Handle Data
   if (newDataReceived) {
-    int pct = map(incomingData.moisture, 1024, 420, 0, 100);
-    pct = constrain(pct, 0, 100);
+    newDataReceived = false;
+    Serial.println("\n--- PACKET RECEIVED ---");
+    Serial.printf("ID: %d | Moisture: %d%%\n", incomingData.id, incomingData.moisture);
     
-    // Create Params
-    String params = "device_id=spoke_" + String(incomingData.id);
-    params += "&raw=" + String(incomingData.moisture);
-    params += "&pct=" + String(pct);
-    params += "&bat=0";
+    // TODO: Send to SIM800L here
+  }
 
-    // Call the correct function
-    sendManualGET(params);
-    
-    newDataReceived = false; 
+  // 2. Continuous Sleep Check (in case window closes while we are awake)
+  static unsigned long lastCheck = 0;
+  if (millis() - lastCheck > 10000) { // Check every 10 sec
+    manageSleep(rtc.now());
+    lastCheck = millis();
   }
 }
