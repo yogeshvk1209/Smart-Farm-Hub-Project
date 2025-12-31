@@ -41,10 +41,10 @@ The code uses "zones" to interpret raw analog readings.
 
 ### 3. Sleep Schedule
 The node uses the RTC to determine whether to sleep for a short interval or through the night.
-*   **Start Hour:** 7 (7:00 AM)
-*   **End Hour:** 19 (7:00 PM)
-*   **Day Interval:** 30 minutes (Default)
-*   **Night Mode:** Sleeps continuously until `START_HOUR` next day.
+*   **Start Hour:** 7 (07:00 AM)
+*   **End Hour:** 22 (10:00 PM)
+*   **Wake Logic (Day):** "Snap-to-Grid". The node calculates sleep seconds to wake up exactly at the next `:00` or `:30` minute mark (e.g., 10:00, 10:30).
+*   **Night Mode:** Sleeps continuously from `END_HOUR` until `START_HOUR` the next day.
 
 ## 📡 Communication Protocol
 *   **Role:** Controller (Sender)
@@ -53,7 +53,7 @@ The node uses the RTC to determine whether to sleep for a short interval or thro
     struct struct_message {
       int id;        // Node ID (e.g., 1)
       int moisture;  // Percent Value (0-100)
-      float voltage; // Battery Voltage (Reserved)
+      float voltage; // Battery Voltage (Currently sending 0.0 placeholder)
     }
     ```
 

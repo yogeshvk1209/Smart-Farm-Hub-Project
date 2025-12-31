@@ -1,6 +1,6 @@
 # Smart Farm Hub Project
 
-**Status:** In Development  
+**Status:** Active Development  
 **Last Updated:** Dec 2025
 
 ## 📖 Project Overview
@@ -11,7 +11,7 @@ A decentralized wireless sensor network for farm monitoring. The system consists
 - **Spokes (Sensors):** ESP8266 + Capacitive Soil Moisture Sensors.
 - **Protocol (Local):** ESP-NOW (Peer-to-Peer, no Wi-Fi router required).
 - **Hub (Gateway):** ESP32 + LTE Modem (SIM7600/EC200U/A7670).
-- **Protocol (Cloud):** 4G LTE (HTTP GET via AT Commands).
+- **Protocol (Cloud):** 4G LTE (HTTP GET via AT Commands) - *Integration Pending*.
 
 ---
 
@@ -19,39 +19,40 @@ A decentralized wireless sensor network for farm monitoring. The system consists
 
 ### Components
 * **Controller:** ESP32 (DOIT DevKit V1 / NodeMCU-32S)
+* **Timekeeping:** DS3231 RTC
 * **Modem:** LTE CAT-1/CAT-4 Module (Quectel/SIMCom)
 * **Power:** External 12V Battery (LiFePO4) -> Buck Converter -> 5V/3.3V
 
 ### 📌 Pinout Configuration
 | ESP32 Pin | Modem Pin | Function | Notes |
 | :--- | :--- | :--- | :--- |
-| **GPIO 16** | TX | UART RX | ESP32 receives data here |
-| **GPIO 17** | RX | UART TX | ESP32 transmits data here |
-| **GPIO 18** | PWRKEY | Power Toggle | **Do NOT use RST.** Pulse LOW to toggle power. |
+| **GPIO 16** | TX | UART RX | Reserved for Modem |
+| **GPIO 17** | RX | UART TX | Reserved for Modem |
+| **GPIO 18** | PWRKEY | Power Toggle | Reserved for Modem |
 | **GND** | GND | Ground | Common ground is mandatory. |
 | **VIN/5V** | VCC | Power | Modem needs high current (peak 2A). |
 
-> **⚠️ Critical Warning:** Do not use **GPIO 2 (D4)**, **GPIO 0**, or **GPIO 12** for the Modem PWRKEY. These pins toggle during boot ("Strapping Pins") and will inadvertently turn off the modem.
+> **⚠️ Note:** The Modem code is currently commented out in `src-hub/src/main.cpp` while the RTC/Sleep logic is being perfected.
 
 ---
 
 ## 💻 Software Logic
 
 ### Hub (ESP32) Boot Sequence
-1.  **Init Serial:** Start `HardwareSerial(2)` at 115200 baud.
-2.  **Modem Check:** Send `AT`.
-    * If `OK`: Modem is running. Proceed.
-    * If Timeout: Pulse **GPIO 18** LOW for 2000ms. Wait 5s for boot.
-3.  **Network Check:**
-    * `AT+CSQ` (Check Signal Strength > 10).
-    * `AT+CREG?` (Check Network Registration).
-4.  **Data Loop:** Listen for ESP-NOW packets -> Upload via LTE.
+1.  **Init RTC:** Check time against DS3231.
+2.  **Window Check:** Determine if we are in an "Active Window" (XX:29-XX:34 or XX:59-XX:04).
+3.  **Active Mode:** 
+    *   Init ESP-NOW on Channel 1.
+    *   Listen for incoming packets.
+4.  **Sleep Mode:** 
+    *   If outside the window, calculate seconds until next window.
+    *   Enter Deep Sleep.
 
 ### Spoke (ESP8266) Logic
 1.  **Wake Up:** Triggered by RTC (DS3231) or internal timer.
 2.  **Read:** Analog Read (A0) with calibration logic.
 3.  **Send:** Transmit struct via ESP-NOW to Hub MAC Address.
-4.  **Sleep:** Deep Sleep until next scheduled wake time (Day interval or next morning).
+4.  **Sleep:** Deep Sleep until next "Snap-to-Grid" target (e.g., 10:00, 10:30) or hibernate until morning if after 10 PM.
 
 ---
 
@@ -70,9 +71,7 @@ A decentralized wireless sensor network for farm monitoring. The system consists
 
 2.  **Hub Configuration:**
     *   Navigate to `src-hub/src/`.
-    *   Rename `secrets_example.h` to `secrets.h`.
-    *   Enter your Google Cloud Run URL in `secrets.h`.
-    *   Flash to ESP32.
+    *   Flash to ESP32. (Modem features currently disabled).
 
 3.  **Spoke Configuration:**
     *   Open `src-spoke/src/main.cpp`.
@@ -82,7 +81,7 @@ A decentralized wireless sensor network for farm monitoring. The system consists
 ---
 
 ## 📝 CLI Reference (AT Commands)
-Useful commands for debugging the modem via "Passthrough" sketch:
+*Note: These commands are used in the pending Modem integration.*
 
 * `AT+CPIN?` -> Check SIM Status (Ready/Error).
 * `AT+CSQ` -> Signal Quality (0-31). Aim for >15.
@@ -94,7 +93,7 @@ Useful commands for debugging the modem via "Passthrough" sketch:
 ---
 
 ## 🚀 Next Steps
-1.  [ ] **Hardware:** Source replacement SIM card.
-2.  [ ] **Software (Hub):** Implement ESP-NOW listener code.
-3.  [ ] **Software (Spoke):** Migrate ESP8266 from Wi-Fi/Blynk to ESP-NOW sender.
+1.  [x] **Software (Hub):** Implement ESP-NOW listener code.
+2.  [ ] **Software (Hub):** Re-integrate LTE Modem code.
+3.  [x] **Software (Spoke):** Migrate ESP8266 from Wi-Fi/Blynk to ESP-NOW sender.
 4.  [ ] **Infrastructure:** Obtain Hub MAC Address for Spoke configuration.
