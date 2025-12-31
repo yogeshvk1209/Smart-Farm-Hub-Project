@@ -15,7 +15,7 @@ const int WET_SOIL = 500;   // Threshold for "Fully Saturated" (100%)
 
 // 3. SLEEP SCHEDULE (24H Format)
 const int START_HOUR = 7;     // Wake up at 07:00
-const int END_HOUR = 22;      // Sleep at 19:00
+const int END_HOUR = 19;      // Sleep at 19:00
 
 // Note: INTERVAL_MINS is removed because we now calculate dynamic snap-to-grid times
 
