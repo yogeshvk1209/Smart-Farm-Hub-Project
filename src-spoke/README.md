@@ -1,53 +1,63 @@
 # FarmSpoke: Soil Moisture Node (ESP8266)
 
-The **FarmSpoke** is a low-power, wireless sensor node designed to sit in the field. It reads environmental data and broadcasts it to the Hub via ESP-NOW.
+The **FarmSpoke** is a solar-powered, wireless sensor node designed for long-term field deployment. It reads soil moisture, manages its own power schedule via an RTC, and broadcasts data to the Hub via ESP-NOW.
 
 ## 🧠 Hardware Architecture
-* **Controller:** ESP8266 (NodeMCU / Wemos D1 Mini)
-* **Sensor:** Capacitive Soil Moisture Sensor v1.2 (Corrosion Resistant)
-* **Protocol:** ESP-NOW (Peer-to-Peer, Connectionless)
+*   **Controller:** ESP8266 (NodeMCU / Wemos D1 Mini)
+*   **Sensor:** Capacitive Soil Moisture Sensor v1.2 (Corrosion Resistant)
+*   **Timekeeping:** DS3231 RTC (Real Time Clock) - I2C
+*   **Power:**
+    *   6V Solar Panel
+    *   TP4056 Charge Controller
+    *   18650 Li-Ion Battery
+*   **Protocol:** ESP-NOW (Peer-to-Peer, Connectionless)
 
 ## 🔌 Pinout & Wiring
 
-```text
-     ESP8266 (NodeMCU)             Soil Sensor
-    +---------+                   +-----------+
-    |     3V3 |-------------------| VCC       |
-    |     GND |-------------------| GND       |
-    |      A0 |<------------------| AOUT      |
-    +---------+                   +-----------+
+For detailed power and solar wiring instructions, see [wiring_map.md](wiring_map.md).
+
+| ESP8266 Pin | Component Pin | Function | Notes |
+| :--- | :--- | :--- | :--- |
+| **A0** (ADC) | Sensor AOUT | Analog Input | Reads moisture (Dry=High, Wet=Low) |
+| **D1** (GPIO5) | RTC SCL | I2C Clock | |
+| **D2** (GPIO4) | RTC SDA | I2C Data | |
+| **D0** (GPIO16)| RST | Deep Sleep Wake | **REQUIRED** for waking up |
+| **3V3** | VCC | Power | Powers Sensor & RTC |
+| **GND** | GND | Ground | Common Ground |
+
+## ⚙️ Configuration & Calibration
+
+### 1. MAC Address
+Update `broadcastAddress` in `src/main.cpp` to match your Hub's MAC address.
+```cpp
+uint8_t broadcastAddress[] = {0xC0, 0xCD, 0xD6, ...};
 ```
 
-| ESP8266 Pin | Sensor Pin | Function | Notes |
-| :--- | :--- | :--- | :--- |
-| **A0** (ADC) | AOUT | Analog Output | Reads voltage (Dry=High, Wet=Low) |
-| **3V3** | VCC | Power | Constant 3.3V |
-| **GND** | GND | Ground | |
+### 2. Soil Calibration
+The code uses "zones" to interpret raw analog readings.
+*   **Bone Dry (0%):** `DRY_SOIL` (Default: 700)
+*   **Fully Wet (100%):** `WET_SOIL` (Default: 500)
+*   **Logic:** Values > 700 are clipped to 0%. Values < 500 are clipped to 100%.
 
-*(Future v2 plan: Move VCC to a GPIO pin to power down sensor between readings for battery savings)*
-
-## ⚙️ Calibration
-The code maps raw analog values (0-1024) to a percentage (0-100%).
-
-* **Air Value (0%):** ~1024 (Max Resistance)
-* **Water Value (100%):** ~420 (Min Resistance)
-* **Formula:** `map(reading, 1024, 420, 0, 100)`
-
-## ⚠️ Configuration Required
-You **must** update the `broadcastAddress` in `src/main.cpp` to match your Hub's MAC address. The Hub prints its MAC address to the Serial Monitor upon startup.
+### 3. Sleep Schedule
+The node uses the RTC to determine whether to sleep for a short interval or through the night.
+*   **Start Hour:** 7 (7:00 AM)
+*   **End Hour:** 19 (7:00 PM)
+*   **Day Interval:** 30 minutes (Default)
+*   **Night Mode:** Sleeps continuously until `START_HOUR` next day.
 
 ## 📡 Communication Protocol
-Uses **ESP-NOW** for ultra-fast transmission (<200ms active time).
-* **Role:** Controller (Sender)
-* **Target:** Broadcasts to Hub MAC Address.
-* **Payload Structure:**
+*   **Role:** Controller (Sender)
+*   **Payload Structure:**
     ```cpp
     struct struct_message {
-      int id;        // Unique Spoke ID (e.g., 1)
-      int moisture;  // Raw Analog Value
+      int id;        // Node ID (e.g., 1)
+      int moisture;  // Percent Value (0-100)
+      float voltage; // Battery Voltage (Reserved)
     }
     ```
 
-## 🔋 Power Management (Current Status)
-*   **Current:** Uses standard `delay(60000)` loop for testing.
-*   **Planned (v2):** Deep Sleep implementation with transistor-gated sensor power to prevent corrosion and extend battery life.
+## 🔋 Power Management
+*   **Deep Sleep:** The ESP8266 enters Deep Sleep between readings to minimize consumption.
+*   **RTC Wake:** The DS3231 allows the node to know "wall clock" time, enabling the Day/Night logic.
+*   **Solar Charging:** The TP4056 manages battery charging from the solar panel.

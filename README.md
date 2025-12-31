@@ -48,10 +48,10 @@ A decentralized wireless sensor network for farm monitoring. The system consists
 4.  **Data Loop:** Listen for ESP-NOW packets -> Upload via LTE.
 
 ### Spoke (ESP8266) Logic
-1.  **Wake Up:** Timer based (Current implementation uses `delay` for testing; Deep Sleep planned for v2).
-2.  **Read:** Analog Read (A0).
+1.  **Wake Up:** Triggered by RTC (DS3231) or internal timer.
+2.  **Read:** Analog Read (A0) with calibration logic.
 3.  **Send:** Transmit struct via ESP-NOW to Hub MAC Address.
-4.  **Wait:** Wait for next cycle (60s).
+4.  **Sleep:** Deep Sleep until next scheduled wake time (Day interval or next morning).
 
 ---
 
