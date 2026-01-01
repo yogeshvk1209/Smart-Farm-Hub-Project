@@ -11,3 +11,4 @@
 #pragma once
 
 #define SECRETS_GCP_URL "https://YOUR-CLOUD-RUN-URL-HERE"
+const char* API_KEY = "MY_COWS_ARE_WATCHING_YOU_99";

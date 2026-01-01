@@ -4,6 +4,7 @@
 #include <esp_wifi.h>
 #include <Wire.h>
 #include <RTClib.h>
+#include "secrets.h"
 
 // --- 1. CONFIGURATION ---
 const String gcp_url = "https://ingest-farm-data-362443017574.asia-south1.run.app";
@@ -11,7 +12,6 @@ const int WIFI_CHANNEL = 1;     // MUST match Spoke
 const int WINDOW_DURATION = 5;  // Stay awake for 5 minutes
 
 // API KEY (Must match Python Code)
-const String API_KEY = "FARM_SECRET_2026"; 
 
 // SCHEDULE (7 AM to 7 PM)
 const int START_HOUR = 7;
