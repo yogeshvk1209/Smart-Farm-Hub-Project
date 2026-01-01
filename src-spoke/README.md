@@ -42,7 +42,7 @@ The code uses "zones" to interpret raw analog readings.
 ### 3. Sleep Schedule
 The node uses the RTC to determine whether to sleep for a short interval or through the night.
 *   **Start Hour:** 7 (07:00 AM)
-*   **End Hour:** 22 (10:00 PM)
+*   **End Hour:** 19 (07:00 PM)
 *   **Wake Logic (Day):** "Snap-to-Grid". The node calculates sleep seconds to wake up exactly at the next `:00` or `:30` minute mark (e.g., 10:00, 10:30).
 *   **Night Mode:** Sleeps continuously from `END_HOUR` until `START_HOUR` the next day.
 

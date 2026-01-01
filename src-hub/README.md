@@ -1,14 +1,16 @@
 # FarmHub: LTE Gateway (ESP32)
 
-The **FarmHub** is the central gateway for the distributed IoT system. It listens for incoming sensor packets via **ESP-NOW** and coordinates sleep schedules with the Spokes.
+The **FarmHub** is the central gateway for the distributed IoT system. It listens for incoming sensor packets via **ESP-NOW**, aggregates the data, and uploads it to Google Cloud via **4G LTE**.
 
-> **⚠️ Current Status:** The code currently implements the **RTC Sleep Synchronization** and **ESP-NOW Reception**. The LTE Modem integration (AT Commands) is currently pending/commented out in `main.cpp`.
+> **✅ Current Status:** The code is **Production Ready**. It features robust **LTE Connectivity (Jio)**, **RTC Sleep Synchronization**, and **ESP-NOW Reception**.
 
 ## 🧠 Hardware Architecture
 * **Controller:** ESP32 Dev Kit V1
 * **Timekeeping:** DS3231 RTC (I2C)
-* **Modem:** Quectel EC200U (LTE Cat 1) - *Integration Pending*
-* **Network:** ESP-NOW (Receiver Role)
+* **Modem:** SIM7600 / Quectel EC200U (configured for generic AT commands via TinyGSM)
+* **Network:** 
+    *   **Local:** ESP-NOW (Receiver Role)
+    *   **Cloud:** 4G LTE (HTTP GET)
 
 ## 🔌 Pinout & Wiring
 
@@ -20,41 +22,47 @@ The **FarmHub** is the central gateway for the distributed IoT system. It listen
     | GPIO 21 |-------------------| RTC SDA              |
     | GPIO 22 |-------------------| RTC SCL              |
     |         |                   |                      |
-    | GPIO 16 |<------------------| Modem TXD (Pending)  |
-    | GPIO 17 |------------------>| Modem RXD (Pending)  |
+    | GPIO 16 |<------------------| Modem TXD            |
+    | GPIO 17 |------------------>| Modem RXD            |
+    | GPIO 18 |------------------>| Modem PWRKEY         |
     +---------+                   +----------------------+
 ```
 
 ## 🚀 Key Software Features
-### 1. RTC-Synchronized Sleep Windows
-To save power, the Hub does not stay awake continuously. Instead, it wakes up during specific "Active Windows" to listen for Spoke data.
-*   **Window Duration:** 5 Minutes.
-*   **Active Times:** 
-    *   `XX:29` to `XX:34`
-    *   `XX:59` to `XX:04`
-*   **Logic:** If the Hub wakes up outside these windows, it calculates the exact seconds remaining until the next window and enters Deep Sleep immediately.
+### 1. Robust LTE Connectivity
+*   **Jio Specifics:** The code includes a dedicated `connectToJio()` sequence that handles context activation (`+QICSGP`, `+QIACT`) specifically for the `jionet` APN.
+*   **Signal Wait:** Implements a critical wait loop (`waitForNetwork`) to ensure the modem has tower signal before attempting data context.
+*   **Security:** Appends a secret token (`FARM_SECRET_2026`) to all requests.
 
-### 2. ESP-NOW Receiver
+### 2. "Early Riser" Sleep Logic
+The Hub manages a complex sleep schedule to minimize power while ensuring it catches all Spoke transmissions.
+*   **Night Mode:** Hibernates from **19:00 to 07:00**.
+*   **Day Mode:** Wakes up for 5-minute windows centered around packet transmission times.
+*   **Nap Mode:** If the window closes, it calculates the *exact* seconds until the next window (:28 or :58) and deep sleeps.
+
+### 3. ESP-NOW Receiver
 *   Configured on **WiFi Channel 1**.
 *   Promiscuous mode enabled briefly to force channel selection.
 *   Registers a callback `OnDataRecv` to handle incoming structures.
 
-## 🛠️ Telemetry Flow (Current)
-1.  **Wake Up:** Hub wakes from Deep Sleep or Power On.
-2.  **Check Time:** Reads DS3231 RTC.
-3.  **Window Check:** 
-    *   If inside Window (e.g. 10:30): Stay awake, init ESP-NOW, listen.
-    *   If outside Window (e.g. 10:15): Calculate sleep time (14 mins), Sleep.
-4.  **Receive:** Packet arrives from Spoke -> Parsed into `struct_message`.
-5.  **Loop:** Continues listening until the window closes (monitored in `loop()`).
+## 🛠️ Telemetry Flow
+1.  **Wake Up:** Hub wakes -> Checks RTC.
+2.  **Modem Init:** Powers on Modem -> Waits for Signal -> Connects to `jionet`.
+3.  **Listen:** enters Active Window.
+4.  **Receive:** Packet arrives from Spoke -> Parsed.
+5.  **Upload:** Immediately performs an HTTP GET to Google Cloud Run.
+    *   `GET /?device_id=1&raw=...&pct=...&token=...`
+6.  **Sleep:** When the window ends, the Hub calculates the next wake-up time and sleeps.
 
 ## ⚙️ Configuration
-The configuration is hardcoded in `src/main.cpp`:
+Hardcoded in `src/main.cpp`:
 ```cpp
-const int WINDOW_DURATION = 5; // Stay awake for 5 minutes
-const int WIFI_CHANNEL = 1;    // MUST match Spoke
+const String gcp_url = "https://ingest-farm-data-....run.app";
+const String API_KEY = "FARM_SECRET_2026";
+const int WINDOW_DURATION = 5; 
+const int WIFI_CHANNEL = 1;    
 ```
 
-## 🚧 Planned Features (To Do)
-1.  **Modem Wake-up:** Re-enable GPIO 18/17/16 logic.
-2.  **Data Upload:** Implement the `AT+QHTTPGET` sequence to upload received data to Google Cloud.
+## 🚧 Future Improvements
+1.  **OTA Updates:** Implement Over-The-Air firmware updates via LTE.
+2.  **Two-Way Comms:** Allow the Hub to send configuration back to Spokes (e.g., change wake intervals).

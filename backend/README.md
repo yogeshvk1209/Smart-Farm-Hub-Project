@@ -27,7 +27,7 @@ The ingestion function code currently contains hardcoded configuration values at
 
 ```python
 # CONFIG (Update if needed)
-PROJECT_ID = "your-project-id"  # <--- Update this!
+PROJECT_ID = "farm-hub"      # Default in code
 DATASET_ID = "farm_telemetry"
 TABLE_ID = "soil_readings"
 ```
@@ -67,11 +67,13 @@ Note: The --allow-unauthenticated flag is required because the IoT modem cannot 
 🔌 API Usage
 The ingestion function is designed to be robust against modem limitations. It supports two modes of data transfer.
 
+> **Note:** The Hub sends a `&token=...` parameter for security. The current Python code accepts this but does not currently validate it against a secret. This is a placeholder for future authentication logic.
+
 Method A: URL Parameters (GET)
 Used by the IoT Modem (Quectel EC200U) to bypass header injection issues.
 
 ```http
-GET https://[YOUR-URL].run.app/?device_id=spoke_1&raw=600&pct=45&bat=4.2
+GET https://[YOUR-URL].run.app/?device_id=spoke_1&raw=600&pct=45&bat=4.2&token=SECRET
 ```
 Method B: JSON Payload (POST)
 Used for testing or future capable devices.
