@@ -7,12 +7,13 @@
 #include "secrets.h"
 
 // --- 1. CONFIGURATION ---
-const String gcp_url = "https://ingest-farm-data-362443017574.asia-south1.run.app";
+//Define you GCP URL in Secrets
+//const String gcp_url = "Your Function URL"
 const int WIFI_CHANNEL = 1;     // MUST match Spoke
 const int WINDOW_DURATION = 5;  // Stay awake for 5 minutes
 
 // API KEY (Must match Python Code)
-
+// Define API keys in Secrets
 // SCHEDULE (7 AM to 7 PM)
 const int START_HOUR = 7;
 const int END_HOUR = 19;
@@ -88,7 +89,7 @@ void sendManualGET(String params) {
   modem.sendAT("+QSSLCFG=\"ciphersuite\",1,0xFFFF"); modem.waitResponse();
 
   // URL Construction
-  String full_url = gcp_url + "/?" + params;
+  String full_url = String(gcp_url) + "/?" + params;
   int urlLen = full_url.length();
   
   Serial.printf("Target Len: %d\n", urlLen);
@@ -218,7 +219,7 @@ void loop() {
     params += "&raw=" + String(raw_val);
     params += "&pct=" + String(pct);
     params += "&bat=" + String(incomingData.voltage, 1);
-    params += "&token=" + API_KEY; // <--- Security
+    params += "&token=" + String(API_KEY); // <--- Security
 
     sendManualGET(params);
   }
