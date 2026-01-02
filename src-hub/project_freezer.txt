@@ -1,11 +1,15 @@
-🧊 PROJECT STATE: SMART FARM HUB (Frozen: Dec 30, 2025)
-1. The Goal: Building a rugged, solar-powered IoT Farm Hub to monitor soil/environment and send data to the cloud.
+🧊 PROJECT STATE: SMART FARM HUB (Status: ACTIVE - Hardware Assembly)
+Last Updated: Jan 2026
 
-2. Hardware Architecture:
+1. The Goal
+Building a rugged, solar-powered IoT Farm Hub to monitor soil/environment and send data to the cloud.
 
+2. Hardware Architecture (VALIDATED)
 Core: ESP32 (DOIT DevKit V1) + EC200U (4G LTE Modem).
 
-Power Source: 3x 18650 Li-Ion Pack (12.6V) with BMS.
+Power Source: 3x 18650 Li-Ion Pack (3S) with BMS.
+
+Status: TESTED & WORKING.
 
 Regulation: LM2596 Buck Converter (Tuned to 5.1V).
 
@@ -13,54 +17,52 @@ Sensors: BME280 (Env), Capacitive Soil Moisture (Analog).
 
 Board: 9x15cm Perfboard.
 
-3. The Current Status (The "Blockers"):
+3. Power Sub-System & Charging Logic (CRITICAL UPDATES)
+Charge Controller (CC): Generic "Blue" PWM Controller.
 
-Soldering: PAUSED. Old iron died. Awaiting Bakon BK606A (90W) delivery.
+Settings: Configured to Mode b03 (Li-Ion) with Cut-off Voltage set to 12.3V.
 
-Enclosure: The 150x110mm box was too small. Decision: Buy a 200x150mm ABS IP65 box (~₹450). Do NOT use the 4x4 CCTV boxes (too cramped).
+Safety Note: No external diodes needed. The 12.3V setting + natural voltage drop/reading error (CC reads ~0.2V higher than actual) ensures battery never exceeds safe 12.6V limit.
 
-Software: GCP Pipeline (Cloud Run -> BigQuery) is architected but code implementation is pending.
+BMS "Wake-Up" Protocol:
 
-4. The Wiring Plan (CONFIRMED):
+Issue: BMS trips (shows 3V ghost voltage) if battery is connected to CC first due to capacitor inrush.
 
-Topology: "Common Bus" Strategy.
+Solution: ALWAYS connect Solar Panel to CC first, then connect the Battery. This "jump starts" the BMS.
 
-Entry: DC Jack (Wall) wires go into the PCB Screw Terminal.
+Wiring Plan:
 
-Storage: Battery wires (from Power Tower) go into the SAME PCB Screw Terminal.
+Topology: "Common Bus" Strategy confirmed.
 
-Regulation: Wires run from Screw Terminal -> LM2596 Inputs.
+Grounds: Common.
 
-Logic Power: Wires run from LM2596 Outputs -> ESP32/Modem VCC.
+4. Software & Cloud (VALIDATED)
+Infrastructure: GCP Pipeline (Cloud Run -> BigQuery) is LIVE.
 
-Grounds: All Grounds are common.
+Status: Data upload validated successfully.
 
-Power Tower: Add Schotky or Silicone done between Charge controller and BMS to avoid battery stress of alway 100% charger. UPDATE: This is not needed. Charge Controller is LiIon (set to b03 with max volt of 12.3v)
+Firmware Logic:
 
-5. Implementation Details (Key Decisions):
+Hub (Main): Wakes every 15 minutes.
 
-Soldering Tip: Use 900M-TK (Knife) for battery pads; TB (Pencil) for ESP32.
+Spoke 1: Wakes every 30 minutes.
 
-LM2596 Mounting: Solder Female Headers to the board so the module is removable/replaceable. (Watch out for non-standard grid spacing).
+Connectivity: EC200U 4G Modem confirmed working.
 
-Safety: "Seatbelt" tape required for battery pack. "Modem Kiss" insulation needed between battery and modem.
+5. Physical Build Status
+Enclosure: 200x150mm ABS IP65 box (Selected to replace cramped CCTV box).
 
-6. Cloud Infrastructure (Already Architected):
+Soldering: PENDING / NEXT STEP.
 
-Protocol: HTTP POST from ESP32.
+Awaiting/Received Bakon BK606A (90W) iron.
 
-Ingest: GCP Cloud Run (Serverless Function).
+Tip Selection: 900M-TK (Knife) for battery pads, TB (Pencil) for ESP32.
 
-Storage: Google BigQuery.
+6. Immediate Next Steps
+Soldering (High Priority): Transfer the breadboard prototype to the Perfboard.
 
-Payload Structure: JSON.
+Order: Solder "Power Section" (Screw Terminals + LM2596 Headers) first to verify voltages before adding ESP32.
 
-7. Immediate Next Steps (When Resuming):
+Enclosure Prep: Drill holes in the new 200x150mm box for glands/connectors.
 
-Test the new Bakon 90W iron.
-
-Drill holes in the new 200x150mm enclosure.
-
-Solder the "Power Section" (Screw Terminals + LM2596 Headers) first.
-
-Flash "Passthrough Code" to test EC200U SIM connectivity.
+Final Assembly: Mount PCB and Battery Pack (with "Seatbelt" tape and "Modem Kiss" insulation).
