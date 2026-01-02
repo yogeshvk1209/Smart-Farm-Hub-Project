@@ -13,16 +13,18 @@ Status: TESTED & WORKING.
 
 Regulation: LM2596 Buck Converter (Tuned to 5.1V).
 
-Sensors: BME280 (Env), Capacitive Soil Moisture (Analog).
+Sensors: Capacitive Soil Moisture (Analog).
 
 Board: 9x15cm Perfboard.
 
 3. Power Sub-System & Charging Logic (CRITICAL UPDATES)
+Solar Panel: Epoxy 12v 4W charging at 85mAh between 11AM to 3PM
+
 Charge Controller (CC): Generic "Blue" PWM Controller.
 
 Settings: Configured to Mode b03 (Li-Ion) with Cut-off Voltage set to 12.3V.
 
-Safety Note: No external diodes needed. The 12.3V setting + natural voltage drop/reading error (CC reads ~0.2V higher than actual) ensures battery never exceeds safe 12.6V limit.
+Safety Note: No external diodes needed. The 12.3V setting + natural voltage drop/reading error (CC reads ~0.2V higher than actual) ensures battery never exceeds safe 12.6V limit. UPDATE: Diode needed to avoid CC taking power back from battery when dark.
 
 BMS "Wake-Up" Protocol:
 
@@ -66,3 +68,6 @@ Order: Solder "Power Section" (Screw Terminals + LM2596 Headers) first to verify
 Enclosure Prep: Drill holes in the new 200x150mm box for glands/connectors.
 
 Final Assembly: Mount PCB and Battery Pack (with "Seatbelt" tape and "Modem Kiss" insulation).
+
+7. Long Term TODO:
+Add a SMS featire so that HUB/Modem sends SMS as soon as it wakes up in the morning (this will act as a alert if no SMS is received)
