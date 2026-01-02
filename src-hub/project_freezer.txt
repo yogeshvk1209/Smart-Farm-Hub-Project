@@ -35,6 +35,8 @@ Logic Power: Wires run from LM2596 Outputs -> ESP32/Modem VCC.
 
 Grounds: All Grounds are common.
 
+Power Tower: Add Schotky or Silicone done between Charge controller and BMS to avoid battery stress of alway 100% charger. UPDATE: This is not needed. Charge Controller is LiIon (set to b03 with max volt of 12.3v)
+
 5. Implementation Details (Key Decisions):
 
 Soldering Tip: Use 900M-TK (Knife) for battery pads; TB (Pencil) for ESP32.
@@ -42,8 +44,6 @@ Soldering Tip: Use 900M-TK (Knife) for battery pads; TB (Pencil) for ESP32.
 LM2596 Mounting: Solder Female Headers to the board so the module is removable/replaceable. (Watch out for non-standard grid spacing).
 
 Safety: "Seatbelt" tape required for battery pack. "Modem Kiss" insulation needed between battery and modem.
-
-Software Fix Needed: BME280 likely has wrong I2C address (0x76) or ID (0x56/0x58). Need to force address or bypass ID check in library.
 
 6. Cloud Infrastructure (Already Architected):
 
