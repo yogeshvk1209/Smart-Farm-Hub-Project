@@ -1,14 +1,9 @@
-/**
- * @file secrets.h
- * @brief Configuration file for sensitive data.
- * 
- * INSTRUCTIONS:
- * 1. Rename this file from "secrets_example.h" to "secrets.h".
- * 2. Update the values below with your specific configuration.
- * 3. Ensure "secrets.h" is added to your .gitignore to prevent committing it.
- */
+pragma once
+#include <Arduino.h>
 
-#pragma once
+// Secrets Configuration
+// (DO NOT COMMIT THIS FILE)
 
-#define SECRETS_GCP_URL "https://YOUR-CLOUD-RUN-URL-HERE"
-const char* API_KEY = "MY_COWS_ARE_WATCHING_YOU_99";
+const String gcp_url = "https://<Function_URL>";
+const char* gcs_url = "https://storage.googleapis.com/<bucket>";
+const char* API_KEY = "FARM_SEC";
