@@ -2,15 +2,18 @@
 
 The **FarmHub** is the central gateway for the distributed IoT system. It listens for incoming sensor packets via **ESP-NOW**, aggregates the data, and uploads it to Google Cloud via **4G LTE**.
 
-> **✅ Current Status:** The code is **Production Ready**. It features robust **LTE Connectivity (Jio)**, **RTC Sleep Synchronization**, and **ESP-NOW Reception**.
+> **✅ Current Status:** The code is **Production Ready**. It features robust **LTE Connectivity (Jio)**, **RTC Sleep Synchronization**, **Image Upload Capability**, and **ESP-NOW Reception**.
 
-## 🧠 Hardware Architecture
-* **Controller:** ESP32 Dev Kit V1
-* **Timekeeping:** DS3231 RTC (I2C)
-* **Modem:** SIM7600 / Quectel EC200U (configured for generic AT commands via TinyGSM)
-* **Network:** 
-    *   **Local:** ESP-NOW (Receiver Role)
-    *   **Cloud:** 4G LTE (HTTP GET)
+## 🧠 Hardware Architecture (VALIDATED)
+*   **Controller:** ESP32 (DOIT DevKit V1)
+*   **Modem:** Quectel EC200U (4G LTE) via UART.
+*   **Timekeeping:** DS3231 RTC (I2C) for precision wake-ups.
+*   **Storage:** Internal SPIFFS (used for buffering Camera images).
+*   **Power:** 
+    *   **Source:** 3x 18650 Li-Ion Pack (3S) with BMS.
+    *   **Regulation:** LM2596 Buck Converter (Tuned to 5.1V).
+    *   **Solar:** 12V 4W Panel + PWM Charge Controller.
+*   **Board:** 9x15cm Perfboard with Common Bus topology.
 
 ## 🔌 Pinout & Wiring
 
@@ -29,18 +32,26 @@ The **FarmHub** is the central gateway for the distributed IoT system. It listen
 ```
 
 ## 🚀 Key Software Features
-### 1. Robust LTE Connectivity
-*   **Jio Specifics:** The code includes a dedicated `connectToJio()` sequence that handles context activation (`+QICSGP`, `+QIACT`) specifically for the `jionet` APN.
-*   **Signal Wait:** Implements a critical wait loop (`waitForNetwork`) to ensure the modem has tower signal before attempting data context.
-*   **Security:** Appends a secret token (`FARM_SECRET_2026`) to all requests.
 
-### 2. "Early Riser" Sleep Logic
+### 1. Robust LTE Connectivity & Bug Fixes
+The Modem logic has been hardened to handle "real world" cellular quirks:
+*   **Sticky Header Fix:** Explicitly disables "Raw Header" mode (`AT+QHTTPCFG="requestheader",0`) before standard GET requests to prevent the modem from confusing sensor data with image uploads.
+*   **Dirty State Reset:** The `resetHTTP()` function runs `AT+QHTTPSTOP` before every transaction to clear any hung contexts.
+*   **Jio Specifics:** Dedicated connection sequence for `jionet` APN.
+
+### 2. Image Ingestion & The "Soda Straw"
+The Hub acts as a bridge for the Camera Spoke:
+*   **Buffering:** Incoming ESP-NOW image chunks are written to a file in SPIFFS (`/cam_capture.jpg`).
+*   **Streaming:** The file is then streamed to the Modem.
+*   **"Soda Straw" Logic:** A critical `delay(20)` is inserted inside the stream loop. This prevents the ESP32 from overwhelming the Modem's UART buffer (The "Soda Straw" effect).
+
+### 3. "Early Riser" Sleep Logic
 The Hub manages a complex sleep schedule to minimize power while ensuring it catches all Spoke transmissions.
 *   **Night Mode:** Hibernates from **19:00 to 07:00**.
 *   **Day Mode:** Wakes up for 5-minute windows centered around packet transmission times.
 *   **Nap Mode:** If the window closes, it calculates the *exact* seconds until the next window (:28 or :58) and deep sleeps.
 
-### 3. ESP-NOW Receiver
+### 4. ESP-NOW Receiver
 *   Configured on **WiFi Channel 1**.
 *   Promiscuous mode enabled briefly to force channel selection.
 *   Registers a callback `OnDataRecv` to handle incoming structures.
