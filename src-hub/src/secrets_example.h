@@ -1,9 +1,4 @@
-pragma once
-#include <Arduino.h>
+#pragma once
 
-// Secrets Configuration
-// (DO NOT COMMIT THIS FILE)
-
-const String gcp_url = "https://<Function_URL>";
-const char* gcs_url = "https://storage.googleapis.com/<bucket>";
-const char* API_KEY = "FARM_SEC";
+// Rename this file to "secrets.h" and enter your details below
+#define SECRETS_GCP_URL "https://YOUR-CLOUD-RUN-URL-HERE"
