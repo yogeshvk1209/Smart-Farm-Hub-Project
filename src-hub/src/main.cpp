@@ -9,10 +9,16 @@
 // secrets.h must contain: const char* API_KEY, const char* gcp_url
 
 // --- 1. CONFIGURATION ---
-const int WIFI_CHANNEL = 1;     // MUST match Spoke
-const int WINDOW_DURATION = 4;  // Stay awake for 4 mins (e.g., 13 to 17)
-const int START_HOUR = 7;       // 7 AM
-const int END_HOUR = 19;        // 7 PM
+const int WIFI_CHANNEL = 1;     
+const int WINDOW_DURATION = 4;  
+const int START_HOUR = 7;       
+const int END_HOUR = 19;        
+
+// --- NEW: VOLTAGE CONFIGURATION (GPIO 34) ---
+#define HUB_BAT_PIN 34 
+// Adjust this factor based on your resistors! 
+// Example: For 12V LiFePO4, if using R1=100k, R2=27k -> Factor is approx 4.7
+float voltage_divider_factor = 11.32; 
 
 // --- 2. MODEM SETUP ---
 #define TINY_GSM_MODEM_SIM7600
@@ -32,7 +38,7 @@ RTC_DS3231 rtc;
 // A. SENSOR DATA (Spoke 1)
 typedef struct __attribute__((packed)) struct_message {
   int id;          
-  int moisture;    // Receiving % from Spoke
+  int moisture;    
   float voltage;   
 } struct_message;
 
@@ -43,25 +49,24 @@ volatile bool newSensorDataReceived = false;
 File imageFile;
 volatile bool isReceivingImage = false;
 unsigned long lastImagePacketTime = 0;
-const int IMAGE_TIMEOUT = 2000; // If no packets for 2s, assume image done
+const int IMAGE_TIMEOUT = 2000; 
 bool imageReadyForUpload = false;
 
 // --- 4. CALLBACKS ---
 
 void OnDataRecv(const esp_now_recv_info_t * info, const uint8_t *incomingDataPtr, int len) {
   
-  // CASE 1: SENSOR DATA (Fixed Size Struct)
+  // CASE 1: SENSOR DATA
   if (len == sizeof(struct_message)) {
     memcpy(&incomingSensorData, incomingDataPtr, sizeof(struct_message));
     newSensorDataReceived = true;
     return;
   }
 
-  // CASE 2: CAMERA CHUNKS (Variable Large Size)
+  // CASE 2: CAMERA CHUNKS
   if (len > sizeof(struct_message) + 10) { 
     lastImagePacketTime = millis();
     
-    // First chunk? Open/Create file.
     if (!isReceivingImage) {
       Serial.println(">> START: Receiving Image Stream...");
       isReceivingImage = true;
@@ -69,11 +74,18 @@ void OnDataRecv(const esp_now_recv_info_t * info, const uint8_t *incomingDataPtr
       if (!imageFile) Serial.println("!! ERROR: Could not open SPIFFS");
     }
     
-    // Append Data
     if (imageFile) {
       imageFile.write(incomingDataPtr, len);
     }
   }
+}
+
+// --- HELPER: READ HUB BATTERY ---
+float readHubBattery() {
+  int raw = analogRead(HUB_BAT_PIN);
+  // ADC Logic: (Raw / 4095) * 3.3V_Ref * Divider_Factor
+  float volts = (raw / 4095.0) * 3.3 * voltage_divider_factor;
+  return volts;
 }
 
 // --- 5. MODEM FUNCTIONS ---
@@ -112,6 +124,7 @@ void resetHTTP() {
 }
 
 // --- UPLOAD 1: SENSOR DATA (GET REQUEST) ---
+// --- UPLOAD 1: SENSOR DATA (GET REQUEST) ---
 void uploadSensorData() {
   resetHTTP();
   Serial.println("\n>>> UPLOADING SENSOR DATA <<<");
@@ -120,14 +133,16 @@ void uploadSensorData() {
   modem.sendAT("+QHTTPCFG=\"requestheader\",0"); 
   modem.waitResponse();
 
-  // 1. Prepare Params
-  int raw_val = incomingSensorData.moisture; 
-  int pct = incomingSensorData.moisture; 
+  // 1. Calculate Hub Voltage
+  // Ensure 'voltage_divider_factor' is calibrated at the top of your code!
+  float hubVolt = readHubBattery(); 
 
+  // 2. Prepare Params
+  // We map 'hubVolt' to the 'bat' parameter so it goes into your BigQuery 'Battery_volts' column.
   String params = "device_id=" + String(incomingSensorData.id);
-  params += "&raw=" + String(raw_val);
-  params += "&pct=" + String(pct);
-  params += "&bat=" + String(incomingSensorData.voltage, 1);
+  params += "&raw=" + String(incomingSensorData.moisture);
+  params += "&pct=" + String(incomingSensorData.moisture); // Or map to a calculated % if you have logic
+  params += "&bat=" + String(hubVolt, 1);                  // <--- SENDING HUB VOLTAGE HERE
   params += "&token=" + String(API_KEY); 
 
   String baseUrl = gcp_url;
@@ -139,6 +154,7 @@ void uploadSensorData() {
   Serial.print("Target URL: ");
   Serial.println(full_url); 
 
+  // 3. Send Request
   modem.sendAT("+QHTTPCFG=\"contextid\",1"); modem.waitResponse();
   modem.sendAT("+QHTTPCFG=\"sslctxid\",1"); modem.waitResponse();
   modem.sendAT("+QSSLCFG=\"seclevel\",1,0"); modem.waitResponse();
@@ -270,7 +286,7 @@ void uploadImage() {
   }
 }
 
-// --- 6. SLEEP MANAGER (Corrected for RTC_DS3231) ---
+// --- 6. SLEEP MANAGER ---
 void manageSleep(DateTime now) {
   int currentHour = now.hour();
   int currentMin = now.minute();
@@ -331,6 +347,10 @@ void manageSleep(DateTime now) {
 
 void setup() {
   Serial.begin(115200);
+  Wire.begin(21, 22);
+  
+  // NEW: SETUP VOLTAGE PIN
+  pinMode(HUB_BAT_PIN, INPUT);
 
   // STEP 1: ESP-NOW INIT
   WiFi.mode(WIFI_STA);

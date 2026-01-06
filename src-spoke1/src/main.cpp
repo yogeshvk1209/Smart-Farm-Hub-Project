@@ -114,7 +114,7 @@ void setup() {
   }
   
   // UNCOMMENT THIS LINE ONE TIME TO SYNC TIME, THEN RE-UPLOAD WITH IT COMMENTED
-  // rtc.adjust(DateTime(F(__DATE__), F(__TIME__))); 
+  // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)) + TimeSpan(0, 0, 2, 0));
 
   DateTime now = rtc.now();
   Serial.printf("\n--- WAKE UP ---\nTime: %02d:%02d:%02d\n", now.hour(), now.minute(), now.second());
