@@ -66,3 +66,14 @@ A decentralized wireless sensor network for farm monitoring. The system consists
 *   [x] **Cloud:** Pipeline Live (Cloud Run -> BigQuery/GCS).
 *   [x] **Spoke 1:** Soil Sensing Active.
 *   [x] **Spoke 2:** Camera Streaming Active.
+
+## 📝 Roadmap & TODOs
+### Spoke 1 (Soil Node)
+- [ ] **Signal Averaging:** Improve accuracy by replacing the single `analogRead` with a multi-sample average (e.g., 10 readings).
+- [ ] **Telemetry:** Implement Battery Voltage monitoring. Read the voltage divider on the analog pin and report it in the `struct_message` (Currently sending 0.0).
+
+### The Hub
+- [ ] **Daily Health SMS:** Implement a "Morning Roll Call". When the Hub wakes at **07:00 AM**, it should send an SMS to the admin containing:
+    -   Hub Battery Voltage.
+    -   LTE Signal Strength (CSQ).
+    -   Summary of received packets/images from previous day.

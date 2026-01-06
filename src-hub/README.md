@@ -28,6 +28,8 @@ The **FarmHub** is the central gateway for the distributed IoT system. It listen
     | GPIO 16 |<------------------| Modem TXD            |
     | GPIO 17 |------------------>| Modem RXD            |
     | GPIO 18 |------------------>| Modem PWRKEY         |
+    |         |                   |                      |
+    | GPIO 34 |<------------------| Battery Voltage Div  |
     +---------+                   +----------------------+
 ```
 
@@ -47,9 +49,10 @@ The Hub acts as a bridge for the Camera Spoke:
 
 ### 3. "Early Riser" Sleep Logic
 The Hub manages a complex sleep schedule to minimize power while ensuring it catches all Spoke transmissions.
-*   **Night Mode:** Hibernates from **19:00 to 07:00**.
-*   **Day Mode:** Wakes up for 5-minute windows centered around packet transmission times.
-*   **Nap Mode:** If the window closes, it calculates the *exact* seconds until the next window (:28 or :58) and deep sleeps.
+*   **Night Mode:** Hibernates from **19:00 to 06:58**.
+*   **Day Mode:** Wakes up for **4-minute windows** centered around packet transmission times.
+    *   **Windows:** :58, :13, :28, :43.
+*   **Nap Mode:** If the window closes, it calculates the *exact* seconds until the next window and deep sleeps.
 
 ### 4. ESP-NOW Receiver
 *   Configured on **WiFi Channel 1**.
@@ -70,7 +73,7 @@ Hardcoded in `src/main.cpp`:
 ```cpp
 const String gcp_url = "https://ingest-farm-data-....run.app";
 const String API_KEY = "FARM_SECRET_2026";
-const int WINDOW_DURATION = 5; 
+const int WINDOW_DURATION = 4; 
 const int WIFI_CHANNEL = 1;    
 ```
 

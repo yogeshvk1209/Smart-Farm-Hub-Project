@@ -58,6 +58,7 @@ Divide the Perfboard into two distinct "Districts" to minimize noise and ensure 
 | RTC SCL       | GPIO 22        | I2C Clock   |
 | RTC VCC       | 3.3V Pin       | Power (Low V)|
 | RTC GND       | GND Pin        | Common Ground|
+| **Bat Divider** | **GPIO 34**   | **Analog In** |
 
 ---
 
@@ -67,6 +68,12 @@ Divide the Perfboard into two distinct "Districts" to minimize noise and ensure 
 graph TD
     %% Inputs
     Bat[Battery Input <br/> (Screw Terminal)] -->|12V| LM[LM2596 Buck <br/> (Set to 5.1V)]
+    Bat -->|12V| R1[Resistor R1]
+
+    %% Voltage Divider
+    R1 --> GPIO34[ESP32 GPIO 34]
+    GPIO34 --> R2[Resistor R2]
+    R2 --> BusGND
 
     %% Power Bus
     LM -->|OUT+| Bus5V[5V Bus Line]
@@ -95,6 +102,8 @@ graph TD
     style LM fill:#ffccbc,stroke:#333
     style Bus5V fill:#ffcdd2,stroke:#f00
     style BusGND fill:#cfd8dc,stroke:#333
+    style R1 fill:#fff9c4,stroke:#333
+    style R2 fill:#fff9c4,stroke:#333
 ```
 
 ---
