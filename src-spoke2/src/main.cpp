@@ -2,13 +2,12 @@
 #include <WiFi.h>
 #include <esp_now.h>
 #include <esp_camera.h>
-#include <ESPNowCam.h>
 
 // 1. CONFIGURATION
-// REPLACE WITH REAL HUB MAC
+// REPLACE WITH YOUR HUB MAC ADDRESS
 uint8_t broadcastAddress[] = {0xC0, 0xCD, 0xD6, 0x85, 0x18, 0x7C}; 
 
-// Global Flag for ACK
+#define MAX_PACKET_SIZE 240 
 volatile bool ackReceived = false;
 
 // CAMERA PINS (AI Thinker)
@@ -29,25 +28,45 @@ volatile bool ackReceived = false;
 #define HREF_GPIO_NUM     23
 #define PCLK_GPIO_NUM     22
 
-// --- 1. NATIVE CALLBACK (THE TRUTH TELLER) ---
+// --- CALLBACKS ---
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
-  if (status == ESP_NOW_SEND_SUCCESS) {
-    ackReceived = true;
-  }
+  if (status == ESP_NOW_SEND_SUCCESS) ackReceived = true;
 }
 
 void deepSleep(int minutes) {
   Serial.printf(">> Sleeping for %d minutes...\n", minutes);
   Serial.flush();
-  uint64_t sleepTime = (uint64_t)minutes * 60 * 1000000;
-  esp_deep_sleep(sleepTime);
+  esp_deep_sleep((uint64_t)minutes * 60 * 1000000);
 }
 
-// --- 2. CAMERA ROUTINE (Only runs if Hub is found) ---
+// --- THE FIX: MANUAL CHUNKING ---
+void sendImageChunked(const uint8_t *data, size_t len) {
+  uint16_t totalPackets = (len + MAX_PACKET_SIZE - 1) / MAX_PACKET_SIZE;
+  Serial.printf("Sending %d bytes in %d packets\n", len, totalPackets);
+
+  for (size_t i = 0; i < len; i += MAX_PACKET_SIZE) {
+    size_t chunkSize = (i + MAX_PACKET_SIZE > len) ? (len - i) : MAX_PACKET_SIZE;
+    
+    // Retry Logic
+    for (int retries=0; retries<3; retries++) {
+        esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *)(data + i), chunkSize);
+        if (result == ESP_OK) break; 
+        delay(10);
+    }
+    
+    // --- CRITICAL DELAY ---
+    // This gives the Hub time to write to SPIFFS before the next chunk hits.
+    delay(40); 
+    // ----------------------
+    
+    if (i % 2400 == 0) Serial.print("."); // Progress dot every 10 packets
+  }
+  Serial.println("\nImage Sent.");
+}
+
 void runCameraSequence() {
   Serial.println(">> Hub Confirmed! Starting Camera...");
   
-  // A. Init Camera
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
@@ -69,8 +88,15 @@ void runCameraSequence() {
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
-  config.jpeg_quality = 12; 
+  
+  // --- UPGRADE SETTINGS ---
+  // Quality: 10 (High). Don't go below 10 or it might crash.
+  config.jpeg_quality = 10; 
+  
+  // Resolution: HD (1280x720). 
+  // Alternatives: FRAMESIZE_XGA (1024x768), FRAMESIZE_SXGA (1280x1024)
   config.frame_size = FRAMESIZE_SVGA; 
+  
   config.fb_count = 1;
 
   if (esp_camera_init(&config) != ESP_OK) {
@@ -78,90 +104,57 @@ void runCameraSequence() {
     return;
   }
 
-  // B. Init Library (This might overwrite our callback, which is fine now)
-  ESPNowCam cam;
-  if (!cam.init()) {
-    Serial.println("ESPNowCam Lib Init Failed");
-    return;
-  }
-  cam.setTarget(broadcastAddress);
+  // Warmup (Important for Auto-Exposure to adjust to light)
+  delay(2000); 
 
-  // C. Capture & Send
+  // Capture
   camera_fb_t * fb = esp_camera_fb_get();
   if(!fb) {
     Serial.println("Capture failed");
     return;
   }
 
-  Serial.printf("Sending Image (%d bytes)...\n", fb->len);
-  
-  // NOTE: sendData also returns true blindly sometimes, 
-  // but we already know the Hub is awake, so it's safer now.
-  if (cam.sendData(fb->buf, fb->len)) {
-    Serial.println("Transfer Finished.");
-  } else {
-    Serial.println("Transfer Failed.");
-  }
+  // Send
+  Serial.printf("Captured %d bytes (SVGA Mode). Sending...\n", fb->len);
+  sendImageChunked(fb->buf, fb->len);
   
   esp_camera_fb_return(fb);
 }
 
 void setup() {
   Serial.begin(115200);
-  Serial.println("\n--- Spoke 2: TRUE Hunter Mode ---");
-
-  // 1. Manual WiFi & ESP-NOW Setup
   WiFi.mode(WIFI_STA);
-  if (esp_now_init() != ESP_OK) {
-    Serial.println("ESP-NOW Init Failed");
-    deepSleep(2);
-  }
-
-  // 2. REGISTER THE TRUTH CALLBACK
+  if (esp_now_init() != ESP_OK) deepSleep(2);
   esp_now_register_send_cb(OnDataSent);
 
-  // 3. Register Peer Manually (For the Ping)
+  // Register Hub
   esp_now_peer_info_t peerInfo;
   memset(&peerInfo, 0, sizeof(peerInfo));
   memcpy(peerInfo.peer_addr, broadcastAddress, 6);
-  peerInfo.channel = 1; // MUST MATCH HUB CHANNEL
+  peerInfo.channel = 1; 
   peerInfo.encrypt = false;
-  
-  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
-    Serial.println("Failed to add peer");
-    deepSleep(2);
-  }
+  if (esp_now_add_peer(&peerInfo) != ESP_OK) deepSleep(2);
 
-  // 4. THE PING
+  // Ping Hub
   uint8_t data = 0x01;
-  ackReceived = false; // Reset flag
-  esp_err_t result = esp_now_send(broadcastAddress, &data, 1);
-
-  if (result == ESP_OK) {
-    Serial.print("Ping Sent. Waiting for ACK...");
-  } else {
-    Serial.println("Ping Send Error (Internal).");
-    deepSleep(2);
-  }
-
-  // 5. WAIT FOR ACK (Max 200ms)
+  ackReceived = false;
+  esp_now_send(broadcastAddress, &data, 1);
+  
   unsigned long start = millis();
   while (millis() - start < 200) {
     if (ackReceived) break;
     delay(10);
   }
 
-  // 6. DECISION TIME
   if (ackReceived) {
-    Serial.println("\n>>> ACK CONFIRMED! Hub is Awake.");
-    // Now we spend the energy
+    Serial.println("\n>>> ACK CONFIRMED! Sending Image.");
     runCameraSequence();
+    delay(500); // Wait for last packet to clear
     deepSleep(30);
   } else {
-    Serial.println("\n>>> NO ACK. Hub is sleeping/offline.");
+    Serial.println("\n>>> NO ACK. Hub is sleeping.");
     deepSleep(2);
   }
 }
 
-void loop() {
-}
+void loop() {}

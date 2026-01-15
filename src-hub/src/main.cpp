@@ -1,27 +1,34 @@
+/**
+ * HUB CODE: "VERBOSE EDITION"
+ * - Restored full connection logs
+ * - Added "Waiting" heartbeat
+ */
+
 #include <Arduino.h>
 #include <WiFi.h>
 #include <esp_now.h>
 #include <esp_wifi.h>
 #include <Wire.h>
 #include <RTClib.h>
-#include <SPIFFS.h>      
+#include <FS.h>
+#include <LittleFS.h>
+#define SPIFFS LittleFS 
+
 #include "secrets.h" 
-// secrets.h must contain: const char* API_KEY, const char* gcp_url
 
 // --- 1. CONFIGURATION ---
 const int WIFI_CHANNEL = 1;     
 const int WINDOW_DURATION = 4;  
 const int START_HOUR = 7;       
 const int END_HOUR = 19;        
+const int IMAGE_TIMEOUT = 10000; 
+#define LED_PIN 2               
 
-// --- NEW: VOLTAGE CONFIGURATION (GPIO 34) ---
 #define HUB_BAT_PIN 34 
-// Adjust this factor based on your resistors! 
-// Example: For 12V LiFePO4, if using R1=100k, R2=27k -> Factor is approx 4.7
 float voltage_divider_factor = 11.32; 
 
 // --- 2. MODEM SETUP ---
-#define TINY_GSM_MODEM_SIM7600
+#define TINY_GSM_MODEM_BG96 
 #define TINY_GSM_RX_BUFFER 1024 
 #include <TinyGsmClient.h>
 
@@ -34,8 +41,6 @@ TinyGsm modem(modemSerial);
 RTC_DS3231 rtc;
 
 // --- 3. DATA STRUCTURES ---
-
-// A. SENSOR DATA (Spoke 1)
 typedef struct __attribute__((packed)) struct_message {
   int id;          
   int moisture;    
@@ -45,180 +50,120 @@ typedef struct __attribute__((packed)) struct_message {
 struct_message incomingSensorData;
 volatile bool newSensorDataReceived = false;
 
-// B. CAMERA DATA (Spoke 2)
-File imageFile;
+// --- RAM BUFFER ---
+#define MAX_IMG_SIZE 50000 
+uint8_t *imgBuffer;        
+volatile size_t imgSize = 0;        
 volatile bool isReceivingImage = false;
-unsigned long lastImagePacketTime = 0;
-const int IMAGE_TIMEOUT = 2000; 
-bool imageReadyForUpload = false;
+volatile unsigned long lastImagePacketTime = 0; 
+bool imageReadyForSave = false;
 
-// --- 4. CALLBACKS ---
+// --- 4. HELPER FUNCTIONS ---
+void forceModemWake() {
+  Serial.println(">> Waking Modem (PWRKEY Sequence)...");
+  digitalWrite(MODEM_PWRKEY, LOW); delay(1200);                      
+  digitalWrite(MODEM_PWRKEY, HIGH); delay(3000);                      
+  modemSerial.print("AT\r\n");      
+}
 
-void OnDataRecv(const esp_now_recv_info_t * info, const uint8_t *incomingDataPtr, int len) {
-  
-  // CASE 1: SENSOR DATA
+// --- 5. ESP-NOW CALLBACK ---
+void IRAM_ATTR OnDataRecv(const esp_now_recv_info_t * info, const uint8_t *incomingDataPtr, int len) {
   if (len == sizeof(struct_message)) {
     memcpy(&incomingSensorData, incomingDataPtr, sizeof(struct_message));
     newSensorDataReceived = true;
     return;
   }
 
-  // CASE 2: CAMERA CHUNKS
-  if (len > sizeof(struct_message) + 10) { 
-    lastImagePacketTime = millis();
-    
-    if (!isReceivingImage) {
-      Serial.println(">> START: Receiving Image Stream...");
-      isReceivingImage = true;
-      imageFile = SPIFFS.open("/cam_capture.jpg", FILE_WRITE); 
-      if (!imageFile) Serial.println("!! ERROR: Could not open SPIFFS");
-    }
-    
-    if (imageFile) {
-      imageFile.write(incomingDataPtr, len);
-    }
+  if (len > 100) {
+      lastImagePacketTime = millis(); 
+      if (!isReceivingImage) {
+          imgSize = 0; 
+          isReceivingImage = true; 
+      }
+      if (imgSize + len < MAX_IMG_SIZE) {
+         memcpy(imgBuffer + imgSize, incomingDataPtr, len);
+         imgSize += len;
+         digitalWrite(LED_PIN, !digitalRead(LED_PIN)); 
+      }
   }
 }
 
-// --- HELPER: READ HUB BATTERY ---
-float readHubBattery() {
-  int raw = analogRead(HUB_BAT_PIN);
-  // ADC Logic: (Raw / 4095) * 3.3V_Ref * Divider_Factor
-  float volts = (raw / 4095.0) * 3.3 * voltage_divider_factor;
-  return volts;
-}
-
-// --- 5. MODEM FUNCTIONS ---
-
+// --- 6. MODEM CONNECTIVITY ---
 bool connectToJio() {
-  Serial.println("--- CONNECTING TO JIO ---");
-  Serial.print("Waiting for Tower...");
-  if (!modem.waitForNetwork(15000L)) {
-    Serial.println(" No Signal.");
-    return false;
-  }
-  Serial.println(" Signal Found.");
-
+  Serial.println("--- CHECKING NETWORK ---");
+  
   if (modem.isNetworkConnected()) {
-      Serial.println("Already online.");
+      Serial.println(">> Modem is already Online.");
       return true;
   }
 
+  Serial.print(">> Connecting to Tower... ");
+  if (!modem.waitForNetwork(15000L)) {
+    Serial.println("FAIL (No Signal).");
+    return false;
+  }
+  Serial.println("SUCCESS (Signal Found).");
+  
+  Serial.print(">> Config Context (Jionet)... ");
   modem.sendAT("+QIDEACT=1"); modem.waitResponse();
   modem.sendAT("+QICSGP=1,3,\"jionet\""); 
-  if (modem.waitResponse() != 1) return false;
+  if (modem.waitResponse() == 1) Serial.println("OK.");
+  else Serial.println("FAIL.");
 
-  Serial.print("Activating Data...");
+  Serial.print(">> Activating Data... ");
   modem.sendAT("+QIACT=1");
-  if (modem.waitResponse(10000) != 1) {
-     Serial.println(" Failed.");
+  if (modem.waitResponse(10000) == 1) {
+     Serial.println("SUCCESS (IP Assigned).");
+     return true;
+  } else {
+     Serial.println("FAIL.");
      return false;
   }
-  return true;
 }
 
 void resetHTTP() {
-  Serial.println(">> Cleaning HTTP State...");
   modem.sendAT("+QHTTPSTOP");
   modem.waitResponse(2000); 
 }
 
-// --- UPLOAD 1: SENSOR DATA (GET REQUEST) ---
-// --- UPLOAD 1: SENSOR DATA (GET REQUEST) ---
-void uploadSensorData() {
+// --- 7. UPLOAD FUNCTIONS ---
+void saveAndUploadImage() {
+  digitalWrite(LED_PIN, LOW); 
+  Serial.println("\n>>> PROCESSING IMAGE <<<");
+  Serial.printf("Final RAM Size: %d bytes\n", imgSize);
+
+  if (imgSize < 1000) {
+      Serial.println("Error: Image too small. Ignoring.");
+      return;
+  }
+
+  File file = LittleFS.open("/cam_capture.jpg", FILE_WRITE);
+  if (!file) { Serial.println("Error: FS Write Failed."); return; }
+  file.write(imgBuffer, imgSize);
+  file.close();
+  Serial.println(">> Saved to LittleFS.");
+  imgSize = 0; 
+
   resetHTTP();
-  Serial.println("\n>>> UPLOADING SENSOR DATA <<<");
-  delay(1000); 
-
-  modem.sendAT("+QHTTPCFG=\"requestheader\",0"); 
-  modem.waitResponse();
-
-  // 1. Calculate Hub Voltage
-  // Ensure 'voltage_divider_factor' is calibrated at the top of your code!
-  float hubVolt = readHubBattery(); 
-
-  // 2. Prepare Params
-  // We map 'hubVolt' to the 'bat' parameter so it goes into your BigQuery 'Battery_volts' column.
-  String params = "device_id=" + String(incomingSensorData.id);
-  params += "&raw=" + String(incomingSensorData.moisture);
-  params += "&pct=" + String(incomingSensorData.moisture); // Or map to a calculated % if you have logic
-  params += "&bat=" + String(hubVolt, 1);                  // <--- SENDING HUB VOLTAGE HERE
-  params += "&token=" + String(API_KEY); 
-
-  String baseUrl = gcp_url;
-  if (baseUrl.endsWith("/")) {
-    baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
-  }
-  String full_url = baseUrl + "/?" + params;
+  Serial.println(">> Uploading to GCP...");
   
-  Serial.print("Target URL: ");
-  Serial.println(full_url); 
-
-  // 3. Send Request
-  modem.sendAT("+QHTTPCFG=\"contextid\",1"); modem.waitResponse();
-  modem.sendAT("+QHTTPCFG=\"sslctxid\",1"); modem.waitResponse();
-  modem.sendAT("+QSSLCFG=\"seclevel\",1,0"); modem.waitResponse();
-
-  modem.sendAT("+QHTTPURL=" + String(full_url.length()) + ",80");
-  if (modem.waitResponse(10000, "CONNECT") == 1) {
-    modem.stream.print(full_url);
-    modem.waitResponse();
-  } else {
-    Serial.println("Error: URL Setup Failed");
-    return;
-  }
-
-  Serial.println(">> Sending GET Request...");
-  modem.sendAT("+QHTTPGET=80");
-  
-  long start = millis();
-  while (millis() - start < 15000) {
-    while (modem.stream.available()) {
-      String line = modem.stream.readStringUntil('\n');
-      line.trim();
-      
-      if (line.length() > 0) {
-        Serial.print("[Modem]: ");
-        Serial.println(line); 
-
-        if (line.indexOf("0,200") != -1) {
-           Serial.println(">>> SENSOR SUCCESS: 200 OK <<<");
-           return; 
-        }
-        if (line.indexOf("ERROR") != -1) return;
-      }
-    }
-  }
-}
-
-// --- UPLOAD 2: IMAGE DATA (POST MULTIPART) ---
-void uploadImage() {
-  resetHTTP();
-  Serial.println("\n>>> UPLOAD: Starting Image Sequence <<<");
-
-  File file = SPIFFS.open("/cam_capture.jpg", FILE_READ);
-  if (!file || file.size() == 0) {
-    Serial.println("Error: Invalid image file.");
-    if (file) file.close();
-    return;
-  }
+  file = LittleFS.open("/cam_capture.jpg", FILE_READ);
   size_t fileSize = file.size();
-  Serial.printf("File Size: %d bytes\n", fileSize);
-
+  
+  // URL PARSING
   String urlStr = gcp_url; 
   int httpsIndex = urlStr.indexOf("https://");
   if (httpsIndex != -1) urlStr = urlStr.substring(httpsIndex + 8);
   if (urlStr.endsWith("/")) urlStr = urlStr.substring(0, urlStr.length() - 1);
-  
   String host = urlStr;
   String targetPath = "/?token=" + String(API_KEY); 
 
+  // HEADER PREP
   String boundary = "------------------------ESP32CamBoundary";
   String bodyHead = "--" + boundary + "\r\n";
   bodyHead += "Content-Disposition: form-data; name=\"image\"; filename=\"cam_capture.jpg\"\r\n";
   bodyHead += "Content-Type: image/jpeg\r\n\r\n";
   String bodyTail = "\r\n--" + boundary + "--\r\n";
-
   size_t bodyLen = bodyHead.length() + fileSize + bodyTail.length();
   
   String httpHeader = "POST " + targetPath + " HTTP/1.1\r\n";
@@ -228,29 +173,30 @@ void uploadImage() {
   httpHeader += "Content-Type: multipart/form-data; boundary=" + boundary + "\r\n";
   httpHeader += "Content-Length: " + String(bodyLen) + "\r\n\r\n"; 
 
+  // SSL SETUP
+  Serial.print(">> Configuring SSL... ");
   modem.sendAT("+QHTTPCFG=\"contextid\",1"); modem.waitResponse();
   modem.sendAT("+QHTTPCFG=\"sslctxid\",1"); modem.waitResponse();
   modem.sendAT("+QSSLCFG=\"seclevel\",1,0"); modem.waitResponse();
   modem.sendAT("+QHTTPCFG=\"requestheader\",1"); modem.waitResponse();
+  Serial.println("OK");
 
+  // CONNECT
   String full_url_for_modem = gcp_url; 
   modem.sendAT("+QHTTPURL=" + String(full_url_for_modem.length()) + ",80");
   if (modem.waitResponse(10000, "CONNECT") == 1) {
     modem.stream.print(full_url_for_modem);
     modem.waitResponse();
-  } else {
-    file.close(); return;
-  }
+  } else { file.close(); return; }
 
+  // SEND
   Serial.println(">> Sending Data Stream...");
   size_t totalUploadSize = httpHeader.length() + bodyLen;
   modem.sendAT("+QHTTPPOST=" + String(totalUploadSize) + ",60,60");
   
   if (modem.waitResponse(20000, "CONNECT") == 1) {
-    modem.stream.print(httpHeader);
-    delay(50); 
-    modem.stream.print(bodyHead);
-    delay(50);
+    modem.stream.print(httpHeader); delay(50); 
+    modem.stream.print(bodyHead);   delay(50);
 
     uint8_t buf[1024]; 
     while (file.available()) {
@@ -260,71 +206,51 @@ void uploadImage() {
     }
     
     modem.stream.print(bodyTail);
-    Serial.println(">> Stream Complete.");
     modem.waitResponse(20000); 
-  } else {
-    file.close(); return;
   }
   
   file.close();
-  Serial.println(">> Waiting for Cloud...");
-  delay(5000); 
-
+  
+  // RESPONSE
+  Serial.println(">> Waiting for Server Response...");
   modem.sendAT("+QHTTPREAD=80"); 
   long start = millis();
-  while (millis() - start < 10000) {
+  while (millis() - start < 5000) {
     while (modem.stream.available()) {
-      String line = modem.stream.readStringUntil('\n');
-      line.trim(); 
-      if (line.length() > 0) {
-        Serial.print("[Cloud]: ");
-        Serial.println(line); 
-        if (line.indexOf("success") != -1) Serial.println(">>> UPLOAD CONFIRMED! <<<");
-        if (line == "OK" || line == "ERROR") return;
-      }
+      Serial.println(modem.stream.readStringUntil('\n'));
     }
   }
 }
 
-// --- 6. SLEEP MANAGER ---
 void manageSleep(DateTime now) {
+  digitalWrite(LED_PIN, LOW); 
   int currentHour = now.hour();
   int currentMin = now.minute();
   int currentSec = now.second();
 
-  // 1. NIGHT MODE (7 PM to 6:58 AM)
-  if (currentHour >= END_HOUR || (currentHour < START_HOUR && !(currentHour == 6 && currentMin >= 58))) {
-      Serial.println("Night Time. Hibernating until 06:58...");
-      
-      long secondsUntilMorning;
+  if (currentHour >= END_HOUR || currentHour < START_HOUR) {
+      Serial.println(">>> NIGHT MODE <<<");
       long secondsInDay = 86400;
       long currentSecondsOfDay = (currentHour * 3600) + (currentMin * 60) + currentSec;
-      long targetSecondsOfDay = (6 * 3600) + (58 * 60); // 06:58:00
+      long targetSecondsOfDay = (START_HOUR * 3600); 
+      long secondsUntilMorning;
+      if (currentHour >= END_HOUR) secondsUntilMorning = (secondsInDay - currentSecondsOfDay) + targetSecondsOfDay;
+      else secondsUntilMorning = targetSecondsOfDay - currentSecondsOfDay;
       
-      if (currentHour >= END_HOUR) {
-        secondsUntilMorning = (secondsInDay - currentSecondsOfDay) + targetSecondsOfDay;
-      } else {
-        secondsUntilMorning = targetSecondsOfDay - currentSecondsOfDay;
-      }
-
+      if (secondsUntilMorning <= 0) secondsUntilMorning = 60; 
       esp_sleep_enable_timer_wakeup(secondsUntilMorning * 1000000ULL);
       esp_deep_sleep_start();
   }
 
-  // 2. ACTIVE WINDOW CHECK
-  // Windows: xx:58, xx:13, xx:28, xx:43
   bool inWindow = false;
-
   if (currentMin >= 58 || currentMin < (58 + WINDOW_DURATION - 60)) inWindow = true; 
   if (currentMin >= 13 && currentMin < (13 + WINDOW_DURATION)) inWindow = true;
   if (currentMin >= 28 && currentMin < (28 + WINDOW_DURATION)) inWindow = true;
   if (currentMin >= 43 && currentMin < (43 + WINDOW_DURATION)) inWindow = true;
 
-  if (inWindow) return; // Stay Awake!
+  if (inWindow) return; 
 
-  // 3. NAP MODE
-  Serial.println("Window Closed. Napping...");
-  
+  Serial.println(">>> DAY MODE: Short Nap <<<");
   int nextTargetMin;
   if (currentMin < 13)      nextTargetMin = 13;
   else if (currentMin < 28) nextTargetMin = 28;
@@ -339,20 +265,42 @@ void manageSleep(DateTime now) {
   long sleepSeconds = (minsToSleep * 60) - currentSec;
   if (sleepSeconds <= 0) sleepSeconds = 10; 
 
-  Serial.printf("Next wake at :%02d. Sleeping for %ld seconds...\n", nextTargetMin, sleepSeconds);
+  Serial.printf("Napping for %ld seconds...\n", sleepSeconds);
   Serial.flush(); 
   esp_sleep_enable_timer_wakeup(sleepSeconds * 1000000ULL);
   esp_deep_sleep_start();
 }
 
 void setup() {
+  delay(3000); 
+
   Serial.begin(115200);
   Wire.begin(21, 22);
-  
-  // NEW: SETUP VOLTAGE PIN
   pinMode(HUB_BAT_PIN, INPUT);
+  
+  pinMode(LED_PIN, OUTPUT); 
+  digitalWrite(LED_PIN, LOW); 
 
-  // STEP 1: ESP-NOW INIT
+  imgBuffer = (uint8_t *)malloc(MAX_IMG_SIZE);
+  if (imgBuffer == NULL) while(1); 
+
+  if (!LittleFS.begin(true)) Serial.println("LittleFS Mount Failed!");
+
+  if (!rtc.begin()) Serial.println("RTC Failed!");
+  
+  DateTime now = rtc.now();
+  int currentHour = now.hour();
+  Serial.printf("Time: %02d:%02d\n", currentHour, now.minute());
+
+  if (currentHour >= END_HOUR || currentHour < START_HOUR) {
+    modemSerial.begin(115200, SERIAL_8N1, MODEM_RX_PIN, MODEM_TX_PIN);
+    pinMode(MODEM_PWRKEY, OUTPUT);
+    digitalWrite(MODEM_PWRKEY, HIGH); 
+    delay(100);
+    manageSleep(now); 
+    return; 
+  }
+
   WiFi.mode(WIFI_STA);
   esp_wifi_set_promiscuous(true);
   esp_wifi_set_channel(WIFI_CHANNEL, WIFI_SECOND_CHAN_NONE);
@@ -361,60 +309,52 @@ void setup() {
   if (esp_now_init() == ESP_OK) {
       esp_now_register_recv_cb(OnDataRecv);
       Serial.println(">> ESP-NOW ACTIVE");
-  } else {
-      Serial.println("!! ESP-NOW FAILED !!");
   }
 
-  // STEP 2: FILESYSTEM & RTC
-  if (!SPIFFS.begin(true)) Serial.println("SPIFFS Mount Failed!");
-  if (!rtc.begin()) Serial.println("RTC Failed!");
-  // Optional: Uncomment below to set time once, then comment out and re-upload
-  // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-
-  // STEP 3: MODEM SETUP
   pinMode(MODEM_PWRKEY, OUTPUT);
   digitalWrite(MODEM_PWRKEY, HIGH); 
   modemSerial.begin(115200, SERIAL_8N1, MODEM_RX_PIN, MODEM_TX_PIN);
-  delay(1000);
+  delay(500);
   
-  Serial.println("Initializing Modem...");
-  modem.restart();
+  Serial.println(">> Checking Modem Status...");
+  modem.sendAT("AT"); 
+  if (modem.waitResponse(1000) != 1) forceModemWake();
+  
   connectToJio(); 
-
   Serial.println("Hub Ready.");
 }
 
 void loop() {
   static unsigned long lastCheck = 0;
+  static unsigned long lastAlivePrint = 0;
 
-  // 1. Handle Sensor Data
-  if (newSensorDataReceived) {
-    newSensorDataReceived = false;
-    Serial.printf("Sensor Packet: ID %d | Value: %d\n", incomingSensorData.id, incomingSensorData.moisture);
-    uploadSensorData();
-  }
-
-  // 2. Handle Image Stream End
+  // 1. END OF STREAM
   if (isReceivingImage) {
-    if (millis() - lastImagePacketTime > IMAGE_TIMEOUT) {
+    if (millis() - lastImagePacketTime > IMAGE_TIMEOUT) { 
       isReceivingImage = false;
-      if (imageFile) imageFile.close(); 
       Serial.println(">> Image Stream Ended.");
-      imageReadyForUpload = true;
+      imageReadyForSave = true;
     }
   }
 
-  // 3. Handle Image Upload
-  if (imageReadyForUpload) {
-    imageReadyForUpload = false;
-    uploadImage();
+  // 2. PROCESS
+  if (imageReadyForSave) {
+    imageReadyForSave = false;
+    saveAndUploadImage();
   }
 
-  // 4. Sleep Logic 
+  // 3. SLEEP CHECK
   if (millis() - lastCheck > 10000) { 
-    if (!isReceivingImage && !imageReadyForUpload) {
+    if (!isReceivingImage && !imageReadyForSave) {
         manageSleep(rtc.now());
     }
     lastCheck = millis();
+  }
+
+  // 4. "I AM ALIVE" HEARTBEAT (Every 5 seconds)
+  // This shows you the Hub is not stuck, just waiting for the Camera.
+  if (millis() - lastAlivePrint > 5000) {
+      if (!isReceivingImage) Serial.println("(Waiting for Camera Data...)");
+      lastAlivePrint = millis();
   }
 }
