@@ -39,12 +39,19 @@ The code uses "zones" to interpret raw analog readings.
 *   **Fully Wet (100%):** `WET_SOIL` (Default: 500)
 *   **Logic:** Values > 700 are clipped to 0%. Values < 500 are clipped to 100%.
 
-### 3. Sleep Schedule
+### 3. Sleep Schedule (Snap-to-Grid)
 The node uses the RTC to determine whether to sleep for a short interval or through the night.
 *   **Start Hour:** 7 (07:00 AM)
 *   **End Hour:** 19 (07:00 PM)
 *   **Wake Logic (Day):** "Snap-to-Grid". The node calculates sleep seconds to wake up exactly at the next `:00` or `:30` minute mark (e.g., 10:00, 10:30).
 *   **Night Mode:** Sleeps continuously from `END_HOUR` until `START_HOUR` the next day.
+
+## 🕒 RTC Synchronization
+If the RTC loses time or is new, you must sync it:
+1.  Open `src/main.cpp`.
+2.  Uncomment the line: `// rtc.adjust(DateTime(F(__DATE__), F(__TIME__)) + TimeSpan(0, 0, 2, 0));`
+3.  Upload the code. The RTC will set itself to the compile time (+2 minutes).
+4.  **Important:** Comment the line out again and re-upload. If you don't, the RTC will reset to the compile time every time the device restarts!
 
 ## 📡 Communication Protocol
 *   **Role:** Controller (Sender)
@@ -61,3 +68,7 @@ The node uses the RTC to determine whether to sleep for a short interval or thro
 *   **Deep Sleep:** The ESP8266 enters Deep Sleep between readings to minimize consumption.
 *   **RTC Wake:** The DS3231 allows the node to know "wall clock" time, enabling the Day/Night logic.
 *   **Solar Charging:** The TP4056 manages battery charging from the solar panel.
+
+## 🚧 Technical Awareness
+1.  **Hardcoded Credentials:** The Hub's MAC address is hardcoded in `main.cpp`.
+2.  **Calibration Dependencies:** The `DRY_SOIL` and `WET_SOIL` constants are specific to a single physical sensor. Replacing the sensor requires recalibration and code updates.

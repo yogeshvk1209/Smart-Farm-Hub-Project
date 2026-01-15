@@ -15,11 +15,13 @@ Since the Spoke has no RTC (Real Time Clock), it cannot know when the Hub is awa
 ## 📸 Image Transfer Sequence
 Once the Hub is confirmed awake:
 1.  **Init Camera:** Power up the camera module (OV2640).
-2.  **Capture:** Take a photo (SVGA 800x600, Low Quality/High Comp).
-3.  **Stream:** The image is too large for a single packet.
-    *   The Spoke splits the JPEG into **240-byte chunks**.
-    *   It "blasts" these chunks to the Hub via ESP-NOW.
-    *   The Hub buffers them to its internal SPIFFS storage.
+    *   **Resolution:** SVGA (800x600)
+    *   **Quality:** 10 (High Quality, Low Compression)
+2.  **Capture:** Take a photo.
+3.  **Stream (Manual Chunking):** The image is too large for a single packet.
+    *   **Chunk Size:** The JPEG is split into **240-byte chunks**.
+    *   **Retries:** Each chunk attempts to send up to 3 times.
+    *   **Critical Delay:** A **40ms delay** is inserted *between every chunk*. This allows the Hub sufficient time to write the previous chunk to its Flash storage (LittleFS) before the next one arrives.
 4.  **Sleep:** Mission complete. Sleep for 30 minutes.
 
 ## 🔌 Hardware & Pinout
@@ -41,5 +43,16 @@ Once the Hub is confirmed awake:
 *   **VSYNC:** 25, **HREF:** 23, **PCLK:** 22
 
 ## 📝 Configuration
+
+### Partition Scheme
+**CRITICAL:** This project requires the `huge_app` partition scheme to allow sufficient memory for image capture buffer.
+*   In `platformio.ini`: `board_build.partitions = huge_app.csv`
+*   Build Flags: `-DBOARD_HAS_PSRAM`
+
+### Settings
 *   **WIFI_CHANNEL:** Must match the Hub (Default: 1).
 *   **Deep Sleep:** 30 minutes (successful cycle), 2 minutes (retry cycle).
+
+## 🚧 Technical Awareness
+1.  **Critical Timing (Magic Numbers):** The `delay(40)` between chunks is a tuned value. If the Hub's write speed changes (e.g., due to file system fragmentation or a different flash chip), this value might need adjustment to prevent packet loss.
+2.  **Hardcoded MAC:** The Hub's MAC address is currently hardcoded in `main.cpp` and must be manually updated for each deployment.

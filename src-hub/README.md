@@ -8,7 +8,7 @@ The **FarmHub** is the central gateway for the distributed IoT system. It listen
 *   **Controller:** ESP32 (DOIT DevKit V1)
 *   **Modem:** Quectel EC200U (4G LTE) via UART.
 *   **Timekeeping:** DS3231 RTC (I2C) for precision wake-ups.
-*   **Storage:** Internal SPIFFS (used for buffering Camera images).
+*   **Storage:** **LittleFS** (replacing SPIFFS) used for buffering large Camera images from RAM to Flash before upload.
 *   **Power:** 
     *   **Source:** 3x 18650 Li-Ion Pack (3S) with BMS.
     *   **Regulation:** LM2596 Buck Converter (Tuned to 5.1V).
@@ -41,20 +41,24 @@ The Modem logic has been hardened to handle "real world" cellular quirks:
 *   **Dirty State Reset:** The `resetHTTP()` function runs `AT+QHTTPSTOP` before every transaction to clear any hung contexts.
 *   **Jio Specifics:** Dedicated connection sequence for `jionet` APN.
 
-### 2. Image Ingestion & The "Soda Straw"
-The Hub acts as a bridge for the Camera Spoke:
-*   **Buffering:** Incoming ESP-NOW image chunks are written to a file in SPIFFS (`/cam_capture.jpg`).
-*   **Streaming:** The file is then streamed to the Modem.
-*   **"Soda Straw" Logic:** A critical `delay(20)` is inserted inside the stream loop. This prevents the ESP32 from overwhelming the Modem's UART buffer (The "Soda Straw" effect).
+### 2. Image Ingestion (RAM -> LittleFS -> Cloud)
+The Hub acts as a bridge for the Camera Spoke with a specific high-reliability flow:
+1.  **Ingest:** Incoming ESP-NOW image chunks are buffered in **RAM** (`imgBuffer`, ~50KB allocated).
+2.  **Save:** Once the stream ends (timeout), the buffer is written to **LittleFS** (`/cam_capture.jpg`).
+3.  **Upload:** The file is then read from LittleFS and streamed to the Modem.
+4.  **"Soda Straw" Logic:** A `delay(20)` is inserted inside the modem stream loop to prevent overflowing the UART buffer.
 
-### 3. "Early Riser" Sleep Logic
+### 3. "Waiting" Heartbeat
+When active but not receiving data, the Hub prints a `(Waiting for Camera Data...)` heartbeat every 5 seconds. This visual cue confirms the device is not frozen while waiting for the "Hunter" Spoke to connect.
+
+### 4. "Early Riser" Sleep Logic
 The Hub manages a complex sleep schedule to minimize power while ensuring it catches all Spoke transmissions.
 *   **Night Mode:** Hibernates from **19:00 to 06:58**.
 *   **Day Mode:** Wakes up for **4-minute windows** centered around packet transmission times.
     *   **Windows:** :58, :13, :28, :43.
 *   **Nap Mode:** If the window closes, it calculates the *exact* seconds until the next window and deep sleeps.
 
-### 4. ESP-NOW Receiver
+### 5. ESP-NOW Receiver
 *   Configured on **WiFi Channel 1**.
 *   Promiscuous mode enabled briefly to force channel selection.
 *   Registers a callback `OnDataRecv` to handle incoming structures.
@@ -64,19 +68,25 @@ The Hub manages a complex sleep schedule to minimize power while ensuring it cat
 2.  **Modem Init:** Powers on Modem -> Waits for Signal -> Connects to `jionet`.
 3.  **Listen:** enters Active Window.
 4.  **Receive:** Packet arrives from Spoke -> Parsed.
-5.  **Upload:** Immediately performs an HTTP GET to Google Cloud Run.
-    *   `GET /?device_id=1&raw=...&pct=...&token=...`
+5.  **Upload:** Immediately performs an HTTP GET/POST to Google Cloud Run.
 6.  **Sleep:** When the window ends, the Hub calculates the next wake-up time and sleeps.
 
 ## ⚙️ Configuration
 Hardcoded in `src/main.cpp`:
 ```cpp
 const String gcp_url = "https://ingest-farm-data-....run.app";
-const String API_KEY = "FARM_SECRET_2026";
 const int WINDOW_DURATION = 4; 
 const int WIFI_CHANNEL = 1;    
+#define SPIFFS LittleFS // Using LittleFS filesystem
 ```
 
-## 🚧 Future Improvements
+## 🚧 Future Improvements & Technical Awareness
+
+### Feature Roadmap
 1.  **OTA Updates:** Implement Over-The-Air firmware updates via LTE.
 2.  **Two-Way Comms:** Allow the Hub to send configuration back to Spokes (e.g., change wake intervals).
+
+### Codebase Awareness (Technical Debt)
+1.  **Memory Management:** The `imgBuffer` is allocated via `malloc` but never freed. While acceptable for this dedicated-purpose firmware (which relies on Deep Sleep resets), it is a technical deviation from standard C++ practices.
+2.  **Blocking Operations:** The Modem interaction uses `modem.waitResponse()` which is blocking. This pauses the main loop during uploads, preventing the Hub from processing other sensor packets if they arrive simultaneously during an upload.
+3.  **Hardcoded Configuration:** MAC addresses and timing constants are currently hardcoded in `main.cpp`. These should ideally be moved to `secrets.h` or a dedicated configuration header.
