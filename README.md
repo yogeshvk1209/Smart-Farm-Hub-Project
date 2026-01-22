@@ -1,7 +1,7 @@
 # Smart Farm Hub Project
 
 **Status:** STABLE / PRODUCTION READY  
-**Last Updated:** Jan 2026
+**Last Updated:** Jan 22, 2026
 
 ## 📖 Project Overview
 A decentralized wireless sensor network for farm monitoring. The system consists of low-power "Spoke" nodes (sensors & cameras) communicating via **ESP-NOW** to a central "Hub" gateway, which uploads data to Google Cloud via **4G LTE**.

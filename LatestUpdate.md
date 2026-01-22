@@ -39,4 +39,14 @@ SCL (22)    DS3231 RTC              I2C Clock
 *   **Code Analysis:**
     *   **Hub:** Robust Modem logic. **Caution:** File I/O in ESP-NOW callback (`OnDataRecv`) is high-risk for blocking.
     *   **Spoke 1:** Efficient deep sleep logic. **Note:** Battery voltage currently sending placeholder 0.0. Soil sensor uses single-sample read (consider averaging).
+
+## 5. Updates (Jan 22, 2026)
+*   **New Diagnostic Tool:**
+    *   Added `src-hub/gsm_testing_main.cpp`: A standalone utility to bridge the ESP32 Serial to the Modem Serial. Useful for sending direct AT commands to the EC200U/SIM7600 (e.g., checking signal `AT+CSQ` or SIM status).
+*   **Hub Enhancements:**
+    *   **RTC Auto-Repair:** Added logic to detect if the DS3231 has lost power (Year < 2025). If detected, it forces a modem wake-up, syncs time from the LTE network (`AT+CCLK`), and reprograms the RTC automatically.
+    *   **Security:** `API_KEY` is now offloaded to `src/secrets.h`.
+*   **Code Cleanup:**
+    *   Verified `LittleFS` implementation for image buffering.
+    *   Confirmed "Soda Straw" logic (20ms delay) in Hub upload loop to prevent UART buffer overflow.
 3. Software Logic (The "Secret Sauce")The Synchronization Hack (Hunter Protocol)Since the Spoke has no RTC, it cannot know when the Hub is awake.Hub wakes at fixed times (xx:28) based on its high-precision DS3231.Spoke uses a "Hunt and Peck" strategy:It wakes up and "pings" the Hub.If Hub is Asleep: No ACK. Spoke sleeps for 2 minutes and tries again.If Hub is Awake: Hardware ACK received. Spoke fires data immediately.Result: The Spoke naturally "drifts" into alignment with the Hub's window.The Image Transfer (Chunking)ESP-NOW cannot send 15KB images in one go (Max 250 bytes).Spoke: Splits JPEG into 240-byte chunks and blasts them.Hub:Detects len > 50 = "This is a Camera Chunk".Opens /cam_capture.jpg in SPIFFS.Appends data until silence > 2 seconds.Upload: Hub reads file from SPIFFS and uses Multipart POST to GCP.4. Deployment Checklist (The "Go Live" Steps)Final Code Cleanup:Hub: Open main.cpp. Search for manageSleep. DELETE return;.Hub: ensure WIFI_CHANNEL = 1.Spoke: ensure hubMacAddress matches the Hub.Power Sequence:Turn on Hub first. Let it stabilize (it might sleep immediately, that's fine).Turn on Spoke.Physical Install:Antennas: Ensure the Modem (LTE) and WiFi antennas are perpendicular if possible.Waterproofing: Use silica gel packets inside your box. Condensation kills ESP32-CAMs.Verification:Wait 30-60 minutes.Check Google Cloud Storage.Note: Do not panic if you miss the first cycle. The "Hunter" algorithm might take 1-2 cycles to sync up perfectly.

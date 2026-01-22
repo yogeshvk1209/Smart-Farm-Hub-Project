@@ -11,10 +11,9 @@ The **FarmHub** is the central gateway for the distributed IoT system. It listen
 *   **Storage:** **LittleFS** (replacing SPIFFS) used for buffering large Camera images from RAM to Flash before upload.
 *   **Power:** 
     *   **Source:** 3x 18650 Li-Ion Pack (3S) with BMS.
-    *   **Regulation:** LM2596 Buck Converter (Tuned to 5.1V).
-    *   **Solar:** 12V 4W Panel + PWM Charge Controller.
-*   **Board:** 9x15cm Perfboard with Common Bus topology.
-
+    *   **Charging:** 20W Solar Panel -> LM2596 (13.9V) -> Diode (IN5408S) -> BMS.
+    *   **Regulation:** LM2596 Buck Converter (Tuned to 5.1V) for System Load.
+    *   **Board:** 9x15cm Perfboard with Common Bus topology.
 ## 🔌 Pinout & Wiring
 
 ```text
@@ -79,6 +78,20 @@ const int WINDOW_DURATION = 4;
 const int WIFI_CHANNEL = 1;    
 #define SPIFFS LittleFS // Using LittleFS filesystem
 ```
+
+**Security:**
+The project now uses a `secrets.h` file (excluded from git) to store sensitive keys.
+*   Create `src/secrets.h` based on `src/secrets_example.h`.
+*   Define: `#define API_KEY "YOUR_SECRET_KEY"`
+
+## 🛠️ Utilities & Debugging
+### GSM Modem Passthrough (`gsm_testing_main.cpp`)
+A standalone sketch is provided to debug modem issues directly.
+1.  Rename `src/main.cpp` to `src/main_hub.cpp`.
+2.  Rename `gsm_testing_main.cpp` to `src/main.cpp`.
+3.  Upload to ESP32.
+4.  Open Serial Monitor at 115200.
+5.  Type AT commands (e.g., `AT`, `AT+CSQ`, `AT+CREG?`) to talk directly to the modem.
 
 ## 🚧 Future Improvements & Technical Awareness
 

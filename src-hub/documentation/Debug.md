@@ -3,6 +3,12 @@
 **Network:** Jio 4G (India) - Pure IPv6 / LTE-Only
 **Controller:** ESP32
 
+## 0. Prerequisite: The Debug Tool
+To execute the AT commands listed below, use the provided passthrough tool:
+1.  Flash `src/gsm_testing_main.cpp` (Rename it to `src/main.cpp` temporarily).
+2.  Open Serial Monitor at **115200 baud**.
+3.  Type the commands below directly into the console.
+
 ---
 
 ## 1. Quick Health Check (Sanity Test)

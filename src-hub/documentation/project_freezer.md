@@ -1,7 +1,7 @@
 # 🧊 Project Freezer: Smart Farm Hub (v1.2)
 
-**Status:** 🟡 TESTING (Roof Bake-in Phase)
-**Date:** January 06, 2026
+**Status:** 🟢 FIELD TESTING (Production Candidate)
+**Date:** January 22, 2026
 **Components:** ESP32 (Hub), EC200U (LTE Modem), Cloud Run (Python), BigQuery, GCS.
 
 ---
@@ -32,16 +32,12 @@
 
 ---
 
-## 2. ⚡ Power Sub-System & Charging Logic
+## 2. ⚡ Power Sub-System (Field Config)
 
-* **Solar Panel:** Epoxy 12V 4W (Charging at ~85mAh between 11AM - 3PM).
-* **Battery:** 3x 18650 Li-Ion Pack (3S) with BMS.
-* **The "Power Tower" (Physical Stack):**
-    * **Charge Controller:** Generic "Blue" PWM Controller (Mode `b03` for Li-Ion, Cut-off `12.3V`).
-    * **Regulation:** LM2596 Buck Converter (Step down to **5.1V** for ESP32/Modem).
-    * **Protection:** Diode installed between Panel and CC to prevent reverse night leakage.
-* **BMS "Wake-Up" Protocol:**
-    * **Rule:** **ALWAYS** connect Solar Panel to CC first, *then* connect the Battery. This prevents the BMS from tripping (showing ghost voltage) due to capacitor inrush.
+*   **Solar Panel:** 20W (Oversized for safety).
+*   **Charging Chain:** `Panel` $\rightarrow$ `Buck (13.9V)` $\rightarrow$ `Diode` $\rightarrow$ `BMS` $\rightarrow$ `3S Li-Ion`.
+*   **System Power:** `Battery` $\rightarrow$ `Buck (5.1V)` $\rightarrow$ `ESP32/Modem`.
+*   **⚠️ IMPORTANT:** See `recommended.md` for a critical safety fix regarding the charging voltage.
 
 ---
 
@@ -58,23 +54,16 @@
 
 * **Enclosure:** 200x150mm ABS IP65 box.
 * **Soldering:** ✅ **COMPLETED**.
-    * *Status:* Transfer from breadboard to Perfboard successful.
-    * *Verification:* "Power Tower" assembled and voltage levels verified. Image transmission and Sensor pulse confirmed post-solder.
-* **Current State:** 🟡 **ROOF BAKE-IN (48-72 Hours)**.
-    * *Location:* Rooftop (Full sun/weather exposure).
-    * *Objective:* Verify thermal stability and power cycling under real-world conditions.
+* **Current State:** 🟢 **FIELD DEPLOYED**.
+    * *Objective:* Long-term reliability test.
+    * *Monitor:* Battery voltage telemetry in BigQuery.
 
-### Bake-In Success Criteria (Pass/Fail)
-1.  **Reliability:** Zero "Hard Resets" or Brownouts over 72 hours.
-2.  **Logic:** Correctly wakes up at scheduled intervals (07:00, 12:00, 17:00).
-3.  **Data:** BigQuery receives data packets consistently without gaps.
-4.  **Thermals:** Components (Regulator/Modem) remain safe inside the sealed box during peak noon sun.
-
-### Immediate Next Steps
-1.  **Analyze Logs:** Review BigQuery/GCS after 72 hours for any missed heartbeats.
-2.  **Final Sealing:** Apply Silicone to cable glands and close lid screws permanently.
-3.  **Deployment:** Move from Roof Test to Field Pole.
+### Success Criteria
+1.  **Reliability:** Zero "Hard Resets" or Brownouts.
+2.  **Logic:** Correctly wakes up at scheduled intervals.
+3.  **Data:** BigQuery receives data packets consistently.
 
 ### Long Term TODO
 * **SMS Alert:** Add feature so Hub sends an SMS immediately upon waking in the morning (Health Check).
-* **Variablise the Start-End time: ** Add feature to allow for Start/End time to be update from SMS or other options
+* **Variablise the Start-End time:** Add feature to allow for Start/End time to be update from SMS.
+

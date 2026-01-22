@@ -7,9 +7,9 @@ The **FarmSpoke** is a solar-powered, wireless sensor node designed for long-ter
 *   **Sensor:** Capacitive Soil Moisture Sensor v1.2 (Corrosion Resistant)
 *   **Timekeeping:** DS3231 RTC (Real Time Clock) - I2C
 *   **Power:**
-    *   6V Solar Panel
-    *   TP4056 Charge Controller
-    *   18650 Li-Ion Battery
+    *   **Source:** 4W Solar Panel -> LM2596 (5.1V).
+    *   **Charging:** TP4056 Charge Controller -> 1x 18650 Li-Ion (2500mAh).
+    *   **Regulation:** TP4056 Out -> Diode (IN5408S) -> ESP8266.
 *   **Protocol:** ESP-NOW (Peer-to-Peer, Connectionless)
 
 ## 🔌 Pinout & Wiring

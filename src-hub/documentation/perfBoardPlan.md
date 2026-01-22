@@ -66,18 +66,24 @@ Divide the Perfboard into two distinct "Districts" to minimize noise and ensure 
 
 ```mermaid
 graph TD
-    %% Inputs
-    Bat[Battery Input <br/> (Screw Terminal)] -->|12V| LM[LM2596 Buck <br/> (Set to 5.1V)]
-    Bat -->|12V| R1[Resistor R1]
+    %% Solar Charging Chain
+    Solar[20W Solar Panel] -->|Input| Buck1[LM2596 Buck #1 <br/> Tuned to 13.9V]
+    Buck1 -->|13.9V| Diode[Diode IN5408S]
+    Diode -->|Charge| BMS[3S BMS]
+    BMS <-->|Charge/Discharge| Bat[3x 18650 Battery Pack]
+
+    %% System Power Chain
+    BMS -->|System Power| Buck2[LM2596 Buck #2 <br/> Tuned to 5.1V]
 
     %% Voltage Divider
+    BMS -->|Sample| R1[Resistor R1]
     R1 --> GPIO34[ESP32 GPIO 34]
     GPIO34 --> R2[Resistor R2]
     R2 --> BusGND
 
     %% Power Bus
-    LM -->|OUT+| Bus5V[5V Bus Line]
-    LM -->|OUT-| BusGND[GND Bus Line]
+    Buck2 -->|OUT+| Bus5V[5V Bus Line]
+    Buck2 -->|OUT-| BusGND[GND Bus Line]
 
     %% Power Distribution
     Bus5V -->|Power| ESP_VIN[ESP32 VIN]
@@ -99,11 +105,10 @@ graph TD
     %% Internal Power
     ESP32_3V3[ESP32 3.3V Out] -->|Power| RTC_VCC[RTC VCC]
 
-    style LM fill:#ffccbc,stroke:#333
+    style Buck1 fill:#ffccbc,stroke:#333
+    style Buck2 fill:#ffccbc,stroke:#333
     style Bus5V fill:#ffcdd2,stroke:#f00
     style BusGND fill:#cfd8dc,stroke:#333
-    style R1 fill:#fff9c4,stroke:#333
-    style R2 fill:#fff9c4,stroke:#333
 ```
 
 ---
