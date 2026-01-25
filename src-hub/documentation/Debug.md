@@ -2,6 +2,7 @@
 **Target Hardware:** Quectel EC200U (LTE Cat 1)
 **Network:** Jio 4G (India) - Pure IPv6 / LTE-Only
 **Controller:** ESP32
+**Firmware Version:** V5.0.0
 
 ## 0. Prerequisite: The Debug Tool
 To execute the AT commands listed below, use the provided passthrough tool:
@@ -53,9 +54,6 @@ To execute the AT commands listed below, use the provided passthrough tool:
 ---
 
 ## 3. Data Activation (Getting an IP)
-*Being connected to the tower (Layer 1) is different from having Internet (Layer 3).*
-
-### Step A: Configure TCP Stack
 *We must tell the internal TCP/IP stack to use the IPv6 context.*
 
 1.  **Deactivate first (Unlock settings):**
@@ -64,31 +62,42 @@ To execute the AT commands listed below, use the provided passthrough tool:
     ```
 2.  **Set Context 1 to IPv4v6:**
     ```text
-    AT+QICSGP=1,3,"jionet","","",0
+    AT+QICSGP=1,3,"jionet"
     ```
-    *(Note: The `3` stands for IPV4V6. Use `1` for IPv4, `2` for IPv6).*
+    *(Note: V5.0.0 uses simplified params. The `3` stands for IPV4V6).*
 
-### Step B: Activate & Verify
-1.  **Activate Context:**
+3.  **Activate Context:**
     ```text
     AT+QIACT=1
     ```
-2.  **Check IP Address:**
+4.  **Check IP Address:**
     ```text
     AT+CGPADDR=1
     ```
     * **Success:** `+CGPADDR: 1,"0.0.0.0,2409:..."` (IPv6 address present).
-    * **Fail:** `0.0.0.0,0:0:0...` (No IP allocated).
 
 ---
 
-## 4. Connectivity Test (Ping)
-*The ultimate proof that data is flowing.*
+## 4. Image Upload Debugging (New in V5.0.0)
+*The system now changes baud rates during upload. Use these commands to simulate that flow.*
 
-| Command | Description |
-| :--- | :--- |
-| `AT+QPING=1,"www.google.com"` | Pings Google. Look for time in ms (e.g., `32`). |
-| `AT+QPING=1,"8.8.8.8"` | **Note:** This often **FAILS on Jio** because `8.8.8.8` is an IPv4 address, and we are on a pure IPv6 stack. Use a hostname (google.com) instead. |
+1.  **Set Baud to 57600 (Image Mode):**
+    ```text
+    AT+IPR=57600
+    ```
+    *(Note: You must change your Serial Monitor baud rate to 57600 immediately after this).*
+
+2.  **Restore Baud to 115200 (Telemetry Mode):**
+    ```text
+    AT+IPR=115200
+    ```
+    *(Note: Switch Serial Monitor back to 115200).*
+
+3.  **Disable Echo (Used during upload):**
+    ```text
+    ATE0
+    ```
+    *(Note: You won't see what you type anymore).*
 
 ---
 
@@ -98,7 +107,7 @@ To execute the AT commands listed below, use the provided passthrough tool:
 | Command | Description |
 | :--- | :--- |
 | `AT+QHTTPURL=?` | Check max URL length supported. |
-| `AT+QSSLCFG="seclevel",1,0` | Set SSL verification level (0 = No Verify/Insecure). Useful if certificates fail. |
+| `AT+QHTTPPOST=?` | Check POST support. |
 | `AT+QIGETERROR` | Returns the specific error code for the last failed TCP/IP command. |
 
 ---
