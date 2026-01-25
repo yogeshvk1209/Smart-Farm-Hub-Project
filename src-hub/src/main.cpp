@@ -17,6 +17,10 @@
 const float VOLT_FACTOR = 11.24; 
 const int MAX_IMG_SIZE = 60000; 
 
+// --- NIGHT MODE SCHEDULE (24H Format) ---
+const int NIGHT_SLEEP_START = 19; // 7:00 PM
+const int NIGHT_SLEEP_END   = 7;  // 7:00 AM
+
 // --- GLOBALS ---
 HardwareSerial modemSerial(2);
 TinyGsm modem(modemSerial);
@@ -41,29 +45,62 @@ void IRAM_ATTR OnDataRecv(const esp_now_recv_info_t * info, const uint8_t *data,
 void uploadTelemetry(struct_message* data);
 void uploadImage();
 float readHubBattery();
+void sendStartupSMS();
 
 // --- SETUP ---
 void setup() {
     Serial.begin(115200);
     delay(2000);
-    Serial.println("\n\n=== HUB STARTING V5.0.0 [FREEZER] ===");
+    Serial.println("\n\n=== HUB STARTING V5.0.2 [STABLE] ===");
 
     imgBuffer = (uint8_t *)malloc(MAX_IMG_SIZE);
     
+    // 1. Initialize RTC First
+    if (!rtc.begin()) {
+        Serial.println(">> RTC NOT FOUND! Check wiring.");
+    }
+
+    // 2. Initialize Modem Serial
     modemSerial.begin(115200, SERIAL_8N1, 16, 17);
     pinMode(MODEM_PWRKEY, OUTPUT);
     digitalWrite(MODEM_PWRKEY, HIGH); 
     
-    // GPRS Init
+    // 3. Wait for Modem to respond to AT
+    Serial.print(">> Syncing Modem... ");
+    unsigned long start = millis();
+    bool alive = false;
+    while (millis() - start < 15000) {
+        if (modem.testAT()) { alive = true; break; }
+        delay(500);
+    }
+
+    if (!alive) {
+        Serial.println("FAIL. Restarting...");
+        ESP.restart();
+    }
+    Serial.println("OK");
+
+    // 4. GPRS Activation
     modem.sendAT("+QIDEACT=1"); 
     modem.sendAT("+QICSGP=1,3,\"jionet\"");
     modem.sendAT("+QIACT=1");
-    modem.waitResponse(10000);
+ 
+    if (modem.waitResponse(10000) == 1) {
+        delay(5000); // Wait for signal to register
+    
+        // --- 7:00 AM MORNING ROLL CALL ONLY ---
+        DateTime now = rtc.now();
+        if (now.hour() == NIGHT_SLEEP_END) {
+            Serial.println(">> Morning window detected. Sending Roll Call SMS...");
+            sendStartupSMS(); 
+        } else {
+            Serial.printf(">> Daytime wake at %02d:%02d. SMS skipped to avoid barrage.\n", now.hour(), now.minute());
+        }
+    }
 
     WiFi.mode(WIFI_STA);
     if (esp_now_init() != ESP_OK) {
-        Serial.println("Error initializing ESP-NOW");
-        return;
+        Serial.println("ESP-NOW Init Failed");
     }
     esp_now_register_recv_cb(OnDataRecv);
     Serial.println("=== HUB ONLINE & LISTENING ===");
@@ -71,6 +108,29 @@ void setup() {
 
 // --- MAIN LOOP ---
 void loop() {
+    // --- NIGHT MODE CHECK ---
+    DateTime now = rtc.now();
+    // Logic: If current hour is >= Start (19) OR < End (7)
+    if (now.hour() >= NIGHT_SLEEP_START || now.hour() < NIGHT_SLEEP_END) {
+        Serial.printf(">> Night Mode Triggered (%02d:00 - %02d:00).\n", NIGHT_SLEEP_START, NIGHT_SLEEP_END);
+        DateTime morningWake;
+        if (now.hour() >= NIGHT_SLEEP_START) {
+            // Sleep until tomorrow's End Hour
+            morningWake = DateTime(now.year(), now.month(), now.day() + 1, NIGHT_SLEEP_END, 0, 0);
+        } else {
+            // We are already past midnight, sleep until today's End Hour
+            morningWake = DateTime(now.year(), now.month(), now.day(), NIGHT_SLEEP_END, 0, 0);
+        }
+        
+        uint64_t sleepSeconds = (morningWake.unixtime() - now.unixtime());
+        
+        Serial.printf(">> Sleeping for %llu seconds until %02d:00 AM.\n", sleepSeconds, NIGHT_SLEEP_END);
+        
+        modem.poweroff(); 
+        esp_sleep_enable_timer_wakeup(sleepSeconds * 1000000ULL);
+        esp_deep_sleep_start();
+    }
+
     // 1. TELEMETRY GATE
     if (newSensorData && !isModemBusy) {
         newSensorData = false;
@@ -191,5 +251,39 @@ void IRAM_ATTR OnDataRecv(const esp_now_recv_info_t * info, const uint8_t *data,
             imgSize += len;
             lastImgPacketTime = millis();
         }
+    }
+}
+
+void sendStartupSMS() {
+    Serial.println(">> Preparing SMS packet...");
+    
+    // Read battery first
+    float vBat = readHubBattery();
+    
+    // Use a local string to build the message safely
+    String msg = "FarmHub V5.0.2 Online\n";
+    
+    // Check if RTC is actually running
+    DateTime now = rtc.now();
+    if (now.year() < 2025) {
+        msg += "Time: Not Synced\n";
+    } else {
+        msg += "Time: " + String(now.hour()) + ":" + String(now.minute()) + "\n";
+    }
+    
+    // Get Signal - TinyGSM returns 99 for unknown
+    int csq = modem.getSignalQuality();
+    if (csq > 31) csq = 0; 
+
+    msg += "Bat: " + String(vBat, 2) + "V\n";
+    msg += "Signal: " + String(csq) + "/31";
+
+    Serial.println(">> Sending to: " + String(SECRETS_ADMIN_PHONE));
+    
+    // Use the library method directly
+    if (modem.sendSMS(SECRETS_ADMIN_PHONE, msg)) {
+        Serial.println(">> SMS SUCCESS");
+    } else {
+        Serial.println(">> SMS FAILED (Check balance/Signal)");
     }
 }
