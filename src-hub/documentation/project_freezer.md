@@ -1,69 +1,59 @@
-# 🧊 Project Freezer: Smart Farm Hub (v1.2)
+❄️ Project Freezer: South Karnataka Farm Hub (V1.0)
+Date: January 25, 2026
 
-**Status:** 🟢 FIELD TESTING (Production Candidate)
-**Date:** January 22, 2026
-**Components:** ESP32 (Hub), EC200U (LTE Modem), Cloud Run (Python), BigQuery, GCS.
+Status: Production Stable (Verified Telemetry + Verified Binary JPEG)
 
----
+📌 Project Overview
+A "Hub and Spoke" farm automation system designed for semi-arid environments. The system uses an ESP32 + EC200U LTE Hub to collect soil moisture telemetry and camera images from distributed ESP-NOW Spokes, then pushes the data to Google Cloud Platform (GCP) via a Python-based Cloud Run backend.
 
-## 1. ⚠️ CRITICAL LOGIC & "GOTCHAS"
-*(Read this before changing any code)*
+🛠 Hardware Stack
+Central Hub: ESP32 (MCU) + Quectel EC200U (LTE Modem).
 
-### A. The "Sticky Header" Bug (Quectel EC200U)
-* **Issue:** The modem's "Raw Header" mode (`AT+QHTTPCFG="requestheader",1`), required for Multipart Image uploads, is **sticky**. It persists across commands.
-* **Symptom:** After an image upload, simple GET requests (Sensor Data) fail immediately with `ERROR` because the modem is still expecting raw headers.
-* **The Fix:** You must explicitly **DISABLE** raw headers (`AT+QHTTPCFG="requestheader",0`) at the start of any function that uses standard GET/POST commands.
+Power: 20W Solar Panel + Battery Management.
 
-### B. The "Dirty State" Reset
-* **Issue:** If an upload fails or times out, the modem often keeps the HTTP context open, blocking future attempts.
-* **The Fix:** A helper function `resetHTTP()` is called before every transaction.
-    * **Command:** `AT+QHTTPSTOP`
-    * **Wait:** 2 seconds.
+Sensing: Soil Moisture (Capacitive) + Battery Voltage monitoring (GPIO 34).
 
-### C. Cloud Function "Traffic Control"
-* **Logic:** A single Cloud Run endpoint handles two distinct data types using `request.method`.
-    * **POST:** Image Uploads -> Streams to Google Cloud Storage (GCS).
-    * **GET:** Sensor Data -> Inserts into BigQuery.
-* **Critical Python Fix:** The imports use `from datetime import datetime`. Therefore, you must use `datetime.utcnow()` and **NOT** `datetime.datetime.utcnow()`. The latter causes a silent 500 crash.
+Communication: * Local: ESP-NOW (Long Range Mode).
 
-### D. The "Soda Straw" Delay
-* **Logic:** When piping the image from SPIFFS to the Modem, you cannot dump the file at full speed. The EC200U UART buffer will overflow.
-* **The Fix:** A `delay(20)` is added inside the `while(file.available())` loop.
+Cloud: 4G LTE (Jio APN: jionet) via AT Commands.
 
----
+⚡ Key Challenges & Engineering Fixes
+1. The "Data vs JPEG" Binary Corruption
+Issue: Images arrived at GCS as generic data files that wouldn't open. Terminal head checks revealed "blank gaps" in the bytes.
 
-## 2. ⚡ Power Sub-System (Field Config)
+Root Cause: UART buffer overrun. The ESP32 was pushing binary data at 115200 bps faster than the modem could transmit over the 4G network.
 
-*   **Solar Panel:** 20W (Oversized for safety).
-*   **Charging Chain:** `Panel` $\rightarrow$ `Buck (13.9V)` $\rightarrow$ `Diode` $\rightarrow$ `BMS` $\rightarrow$ `3S Li-Ion`.
-*   **System Power:** `Battery` $\rightarrow$ `Buck (5.1V)` $\rightarrow$ `ESP32/Modem`.
-*   **⚠️ IMPORTANT:** See `recommended.md` for a critical safety fix regarding the charging voltage.
+Fix: * Dynamic Baud Switching: The Hub now drops to 57600 bps strictly for image uploads.
 
----
+Trickle-Feed: Data is sent in small 128-byte chunks with a 45ms delay to ensure the modem's internal buffer never overflows.
 
-## 3. 🏗 Hardware Architecture (Validated)
+Header Alignment: A "Header Hunt" logic was added to find the 0xFF 0xD8 marker, ensuring every file starts exactly at the JPEG SOI.
 
-* **Core:** ESP32 (DOIT DevKit V1) + EC200U (4G LTE Modem).
-* **Sensors:** Capacitive Soil Moisture (Analog).
-* **Board:** 9x15cm Perfboard (Soldered).
-* **Topology:** "Common Bus" Strategy (Star Grounding to reduce noise).
+2. Mid-Air Collisions (The Mutex Lock)
+Issue: Telemetry uploads would fail or "Square 1" errors would occur if a sensor packet arrived while an image was being uploaded.
 
----
+Fix: Implemented a Global Mutex Lock (isModemBusy). The Hub now serializes tasks—finishing the image completely before allowing the modem to switch back to telemetry mode.
 
-## 4. 🛠 Physical Build Status
+3. GPRS Context Deadlocks
+Issue: The modem would "hang" or go silent if an AT command didn't receive the expected CONNECT or OK prompt.
 
-* **Enclosure:** 200x150mm ABS IP65 box.
-* **Soldering:** ✅ **COMPLETED**.
-* **Current State:** 🟢 **FIELD DEPLOYED**.
-    * *Objective:* Long-term reliability test.
-    * *Monitor:* Battery voltage telemetry in BigQuery.
+Fix: Replaced raw serial.find() with Library-managed Timeouts and guaranteed "Unlock" logic. Even if a transmission fails, the Hub resets its state and remains ready for the next cycle.
 
-### Success Criteria
-1.  **Reliability:** Zero "Hard Resets" or Brownouts.
-2.  **Logic:** Correctly wakes up at scheduled intervals.
-3.  **Data:** BigQuery receives data packets consistently.
+4. Ghost/Noise Uploads
+Issue: Frequent 1-byte file uploads triggered by noise or handshake packets.
 
-### Long Term TODO
-* **SMS Alert:** Add feature so Hub sends an SMS immediately upon waking in the morning (Health Check).
-* **Variablise the Start-End time:** Add feature to allow for Start/End time to be update from SMS.
+Fix: A Minimum Size Filter (1000 bytes) ensures the Hub only initiates a heavy 4G POST request if a substantial amount of image data has actually been collected.
 
+📊 Cloud Integration Details
+BigQuery: Stores moisture (%) and battery voltage (V).
+
+Note: Strict type-casting (Int/Float) was added to the Python backend to prevent silent ingestion failures.
+
+GCS: Stores JPEGs in a date-partitioned structure: uploads/YYYY/MM/DD/spoke_X_timestamp.jpg.
+
+Security: Token-based authentication (FARM_SEC) is enforced on all incoming HTTP requests.
+
+🚜 Maintenance Notes for South Karnataka Deployment
+Calibration: If battery readings drift, adjust the VOLT_FACTOR (currently 11.24) in the Hub firmware.
+
+Signal: Ensure the EC200U antenna is clear of metal obstructions. The system is currently optimized for Jio's 4G latency.
