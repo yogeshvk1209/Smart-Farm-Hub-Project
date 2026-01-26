@@ -2,7 +2,7 @@
 
 The **FarmHub** is the central gateway for the distributed IoT system. It listens for incoming sensor packets via **ESP-NOW**, aggregates the data, and uploads it to Google Cloud via **4G LTE**.
 
-> **✅ Current Status:** The code is **Production Ready (V5.0.0)**. It features robust **LTE Connectivity (Jio)**, **Deadlock-Free Mutex Logic**, **Reliable Image Uploads**, and **ESP-NOW Reception**.
+> **✅ Current Status:** The code is **Production Ready (V5.0.2)**. It features **Night Mode (Power Saving)**, **Morning SMS Roll Call**, robust **LTE Connectivity**, and **Deadlock-Free Mutex Logic**.
 
 ## 🧠 Hardware Architecture (VALIDATED)
 *   **Controller:** ESP32 (DOIT DevKit V1)
@@ -56,13 +56,20 @@ The Hub uses a specialized flow to prevent UART buffer overruns:
 *   Configured on **WiFi Channel 1** (as per Modem interference testing).
 *   Registers a callback `OnDataRecv` to handle incoming structures.
 
+### 5. Power Smart Features (V5.0.2)
+*   **Night Mode:** The Hub enters Deep Sleep from **19:00 to 07:00**. This saves significant power by turning off the 4G Modem when it's not needed.
+*   **Morning Roll Call:** Upon waking at 07:00 AM, the Hub sends a diagnostic **SMS** to the admin containing:
+    *   Battery Voltage
+    *   Time Sync Status
+    *   Signal Strength
+
 ## 🛠️ Telemetry Flow
 1.  **Start:** Hub initializes Modem & ESP-NOW.
 2.  **Listen:** Continuously monitors for incoming ESP-NOW packets.
 3.  **Process:** 
     *   If **Telemetry**: Reads Battery Voltage -> Uploads to BigQuery via GET.
     *   If **Image**: Buffers to RAM -> "Trickle" Uploads to GCS via POST.
-4.  **Repeat:** System remains active (Always-On).
+4.  **Repeat:** System remains active during the day, then Deep Sleeps at night (19:00 - 07:00).
 
 ## ⚙️ Configuration
 Hardcoded in `src/main.cpp`:

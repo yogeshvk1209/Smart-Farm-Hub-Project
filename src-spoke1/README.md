@@ -36,14 +36,18 @@ uint8_t broadcastAddress[] = {0xC0, 0xCD, 0xD6, ...};
 ### 2. Soil Calibration
 The code uses "zones" to interpret raw analog readings.
 *   **Bone Dry (0%):** `DRY_SOIL` (Default: 700)
-*   **Fully Wet (100%):** `WET_SOIL` (Default: 500)
-*   **Logic:** Values > 700 are clipped to 0%. Values < 500 are clipped to 100%.
+*   **Fully Wet (100%):** `WET_SOIL` (Default: 300)
+*   **Logic:** Values > 700 are clipped to 0%. Values < 300 are clipped to 100%.
 
-### 3. Sleep Schedule (Snap-to-Grid)
-The node uses the RTC to determine whether to sleep for a short interval or through the night.
+### 3. Sleep Schedule (Collision Avoidance)
+The node uses the RTC to orchestrate a precise wake-up schedule to avoid colliding with the Camera Spoke (Spoke 2) and to respect the Hub's wake window.
+
 *   **Start Hour:** 7 (07:00 AM)
 *   **End Hour:** 19 (07:00 PM)
-*   **Wake Logic (Day):** "Snap-to-Grid". The node calculates sleep seconds to wake up exactly at the next `:00` or `:30` minute mark (e.g., 10:00, 10:30).
+*   **Wake Logic (Day):**
+    *   **Wake Time:** Targets minute marks **:28** and **:58** (2 minutes before the typical :00/:30 slots).
+    *   **Transmission Slot:** Once awake, the node waits until exactly **:25 seconds** past the minute to transmit.
+    *   **Why?** This safe zone ensures the Camera Spoke has finished its heavy transmission (usually 0-15 seconds past the minute) before the Soil Spoke speaks.
 *   **Night Mode:** Sleeps continuously from `END_HOUR` until `START_HOUR` the next day.
 
 ## 🕒 RTC Synchronization

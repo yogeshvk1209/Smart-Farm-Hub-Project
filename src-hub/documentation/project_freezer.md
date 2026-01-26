@@ -1,7 +1,7 @@
-# Project Freezer: South Karnataka Farm Hub (V1.0)
+# Project Freezer: South Karnataka Farm Hub (V5.0.2)
 
-**Date:** January 25, 2026  
-**Status:** Production Stable (Verified Telemetry + Verified Binary JPEG)
+**Date:** January 26, 2026  
+**Status:** Production Stable (Night Mode + Morning Roll Call + Deadlock Protection)
 
 ## Project Overview
 
@@ -41,6 +41,21 @@ A "Hub and Spoke" farm automation system designed for semi-arid environments. Th
 
 *   **Issue:** Frequent 1-byte file uploads triggered by noise or handshake packets.
 *   **Fix:** A Minimum Size Filter (1000 bytes) ensures the Hub only initiates a heavy 4G POST request if a substantial amount of image data has actually been collected.
+
+### 5. Power Conservation (Night Mode)
+
+*   **Issue:** Running the 4G Modem 24/7 was draining the battery unnecessarily during the night when no photosynthesis (and thus no critical irrigation data) occurs.
+*   **Fix:** Implemented a **Deep Sleep Schedule (19:00 - 07:00)**.
+    *   The Hub shuts down the Modem (`AT+POWEROFF`) and enters Deep Sleep.
+    *   It wakes up automatically at 07:00 AM using the RTC.
+
+### 6. Admin Alerts (Morning Roll Call)
+
+*   **Issue:** "Silent Failures" where the Hub might be on but not connected were hard to diagnose without logging into the cloud console.
+*   **Fix:** **Morning Roll Call SMS**.
+    *   At 07:00 AM wake-up, the Hub sends a direct SMS to the Admin.
+    *   **Content:** Battery Voltage, Time Sync Status, and Signal Strength (CSQ).
+    *   *Result:* The farmer knows the system is alive before they even have breakfast.
 
 ## Cloud Integration Details
 
