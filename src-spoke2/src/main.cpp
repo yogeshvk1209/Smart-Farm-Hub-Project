@@ -8,6 +8,8 @@
 uint8_t broadcastAddress[] = {0xC0, 0xCD, 0xD6, 0x85, 0x18, 0x7C}; 
 
 #define MAX_PACKET_SIZE 240 
+// RTC_DATA_ATTR int lastKnownHour = 0;
+RTC_DATA_ATTR int missCount = 0;
 volatile bool ackReceived = false;
 
 // CAMERA PINS (AI Thinker)
@@ -141,20 +143,34 @@ void setup() {
   esp_now_send(broadcastAddress, &data, 1);
   
   unsigned long start = millis();
-  while (millis() - start < 200) {
+  while (millis() - start < 500) { // Increased wait for Hub ACK
     if (ackReceived) break;
     delay(10);
   }
 
-  if (ackReceived) {
-    Serial.println("\n>>> ACK CONFIRMED! Sending Image.");
-    runCameraSequence();
-    delay(500); // Wait for last packet to clear
-    deepSleep(30);
+// ... existing Ping Hub logic ...
+
+if (ackReceived) {
+    missCount = 0; // Reset misses on success
+    Serial.println("\n>>> HUB ONLINE! Capturing...");
+    runCameraSequence(); //
+    delay(1000); 
+    deepSleep(15); // SUCCESS: Wake up in 15 mins for the next photo
   } else {
-    Serial.println("\n>>> NO ACK. Hub is sleeping.");
-    deepSleep(2);
+    missCount++; // Increment consecutive misses
+    Serial.printf("\n>>> NO ACK. Miss count: %d\n", missCount);
+    
+    // Logic: If we've missed 2 pings in a row (~30 mins of silence), 
+    // it's likely after 19:00 (Night Mode).
+    if (missCount >= 2) {
+        Serial.println(">> Hub consistently dark. Entering Night Mode Sleep...");
+        missCount = 0; // Reset for a clean start in the morning
+        deepSleep(600); // Sleep 10 hours to bridge the night gap until 07:00 AM
+    } else {
+        Serial.println(">> Hub missed. Retrying in 15 mins to confirm Night Mode.");
+        deepSleep(15); // First miss: retry quickly to confirm if it's just a signal glitch
+    }
   }
-}
+}  
 
 void loop() {}
